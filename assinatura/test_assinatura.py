@@ -136,11 +136,20 @@ class TestInvocarAssinador(unittest.TestCase):
             stderr=""
         )
 
+        args_fornecidos = ["--operacao", "criar", "--documento", "SGVsbG8=", "--certificado", "cert-001"]
         resultado = invocar_assinador(
-            ["--operacao", "criar", "--documento", "SGVsbG8=", "--certificado", "cert-001"],
+            args_fornecidos,
             jar_path="/fake/assinador.jar"
         )
         self.assertEqual(resultado["status"], "sucesso")
+
+        comando_esperado = ["java", "-jar", "/fake/assinador.jar"] + args_fornecidos
+        mock_run.assert_called_once_with(
+            comando_esperado,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
 
     @patch("assinatura.subprocess.run")
     @patch("assinatura.encontrar_java", return_value="java")
