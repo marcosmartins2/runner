@@ -64,6 +64,12 @@ python assinatura/assinatura.py criar --documento SGVsbG8= --certificado cert-00
 python assinatura/assinatura.py validar --documento SGVsbG8= --assinatura dGVzdA==
 ```
 
+### Verificar versão do CLI
+
+```bash
+python assinatura/assinatura.py --version
+```
+
 ### Especificar caminho do JAR
 
 ```bash
@@ -74,7 +80,7 @@ python assinatura/assinatura.py --jar /caminho/para/assinador.jar criar --docume
 
 ```
 ============================================================
-  ✅ Status: SUCESSO
+  [OK] Status: SUCESSO
 ------------------------------------------------------------
   Mensagem:    Assinatura digital criada com sucesso (simulação).
   Algoritmo:   SHA256withRSA
