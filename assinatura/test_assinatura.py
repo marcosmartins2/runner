@@ -10,6 +10,7 @@ import json
 import os
 import sys
 import unittest
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 # Adicionar diretório do módulo ao path
@@ -143,7 +144,8 @@ class TestInvocarAssinador(unittest.TestCase):
         )
         self.assertEqual(resultado["status"], "sucesso")
 
-        comando_esperado = ["java", "-jar", "/fake/assinador.jar"] + args_fornecidos
+        caminho_esperado = str(Path("/fake/assinador.jar").resolve())
+        comando_esperado = ["java", "-jar", caminho_esperado] + args_fornecidos
         mock_run.assert_called_once_with(
             comando_esperado,
             capture_output=True,
