@@ -6,42 +6,39 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Base64;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Testes unitários para o Assinador.
- *
- * <p>Cobre validação de parâmetros, criação simulada de assinatura,
- * validação simulada de assinatura e tratamento de erros.</p>
+ * Unit tests for the signer simulation.
  */
 class AssinadorAppTest {
 
     private static final String DOCUMENTO_VALIDO =
             Base64.getEncoder().encodeToString("documento de teste".getBytes());
     private static final String CERTIFICADO_VALIDO = "cert-001";
-    private static final String ASSINATURA_VALIDA =
+    private static final String ASSINATURA_DIFERENTE =
             Base64.getEncoder().encodeToString("assinatura simulada".getBytes());
 
-    // ======================================================================
-    // Testes de Validação de Parâmetros
-    // ======================================================================
-
     @Nested
-    @DisplayName("Validação de Parâmetros")
+    @DisplayName("Validacao de parametros")
     class ValidacaoParametrosTest {
 
         @Test
-        @DisplayName("Deve rejeitar quando nenhum parâmetro é fornecido")
+        @DisplayName("Deve rejeitar quando nenhum parametro e fornecido")
         void deveRejeitarSemParametros() {
             IllegalArgumentException ex = assertThrows(
                     IllegalArgumentException.class,
                     () -> ValidadorParametros.validar(new String[]{})
             );
-            assertTrue(ex.getMessage().contains("Nenhum parâmetro fornecido"));
+            assertTrue(ex.getMessage().contains("Nenhum"));
         }
 
         @Test
-        @DisplayName("Deve rejeitar quando --operacao não é informada")
+        @DisplayName("Deve rejeitar quando --operacao nao e informada")
         void deveRejeitarSemOperacao() {
             String[] args = {"--documento", DOCUMENTO_VALIDO};
             IllegalArgumentException ex = assertThrows(
@@ -52,21 +49,25 @@ class AssinadorAppTest {
         }
 
         @Test
-        @DisplayName("Deve rejeitar operação inválida")
+        @DisplayName("Deve rejeitar operacao invalida")
         void deveRejeitarOperacaoInvalida() {
             String[] args = {"--operacao", "encriptar", "--documento", DOCUMENTO_VALIDO};
             IllegalArgumentException ex = assertThrows(
                     IllegalArgumentException.class,
                     () -> ValidadorParametros.validar(args)
             );
-            assertTrue(ex.getMessage().contains("Operação inválida"));
+            assertTrue(ex.getMessage().contains("Opera"));
             assertTrue(ex.getMessage().contains("encriptar"));
         }
 
         @Test
-        @DisplayName("Deve rejeitar documento não Base64")
+        @DisplayName("Deve rejeitar documento nao Base64")
         void deveRejeitarDocumentoInvalido() {
-            String[] args = {"--operacao", "criar", "--documento", "!!!inválido!!!", "--certificado", CERTIFICADO_VALIDO};
+            String[] args = {
+                    "--operacao", "criar",
+                    "--documento", "!!!invalido!!!",
+                    "--certificado", CERTIFICADO_VALIDO
+            };
             IllegalArgumentException ex = assertThrows(
                     IllegalArgumentException.class,
                     () -> ValidadorParametros.validar(args)
@@ -75,7 +76,7 @@ class AssinadorAppTest {
         }
 
         @Test
-        @DisplayName("Deve rejeitar criação sem certificado")
+        @DisplayName("Deve rejeitar criacao sem certificado")
         void deveRejeitarCriacaoSemCertificado() {
             String[] args = {"--operacao", "criar", "--documento", DOCUMENTO_VALIDO};
             IllegalArgumentException ex = assertThrows(
@@ -86,7 +87,7 @@ class AssinadorAppTest {
         }
 
         @Test
-        @DisplayName("Deve rejeitar validação sem assinatura")
+        @DisplayName("Deve rejeitar validacao sem assinatura")
         void deveRejeitarValidacaoSemAssinatura() {
             String[] args = {"--operacao", "validar", "--documento", DOCUMENTO_VALIDO};
             IllegalArgumentException ex = assertThrows(
@@ -97,7 +98,7 @@ class AssinadorAppTest {
         }
 
         @Test
-        @DisplayName("Deve aceitar parâmetros válidos para criação")
+        @DisplayName("Deve aceitar parametros validos para criacao")
         void deveAceitarParametrosValidosCriacao() {
             String[] args = {
                     "--operacao", "criar",
@@ -111,26 +112,22 @@ class AssinadorAppTest {
         }
 
         @Test
-        @DisplayName("Deve aceitar parâmetros válidos para validação")
+        @DisplayName("Deve aceitar parametros validos para validacao")
         void deveAceitarParametrosValidosValidacao() {
             String[] args = {
                     "--operacao", "validar",
                     "--documento", DOCUMENTO_VALIDO,
-                    "--assinatura", ASSINATURA_VALIDA
+                    "--assinatura", ASSINATURA_DIFERENTE
             };
             ParametrosEntrada p = ValidadorParametros.validar(args);
             assertEquals("validar", p.getOperacao());
             assertEquals(DOCUMENTO_VALIDO, p.getDocumento());
-            assertEquals(ASSINATURA_VALIDA, p.getAssinatura());
+            assertEquals(ASSINATURA_DIFERENTE, p.getAssinatura());
         }
     }
 
-    // ======================================================================
-    // Testes do Serviço de Assinatura
-    // ======================================================================
-
     @Nested
-    @DisplayName("Serviço de Assinatura")
+    @DisplayName("Servico de assinatura")
     class AssinaturaServiceTest {
 
         private final AssinaturaService service = new AssinaturaService();
@@ -153,7 +150,7 @@ class AssinadorAppTest {
         }
 
         @Test
-        @DisplayName("A assinatura simulada deve ser Base64 válido")
+        @DisplayName("A assinatura simulada deve ser Base64 valido")
         void assinaturaDeveSerBase64Valido() {
             ParametrosEntrada params = new ParametrosEntrada(
                     "criar", DOCUMENTO_VALIDO, CERTIFICADO_VALIDO, null
@@ -167,16 +164,35 @@ class AssinadorAppTest {
         }
 
         @Test
-        @DisplayName("Deve validar assinatura com sucesso")
-        void deveValidarAssinatura() {
+        @DisplayName("Deve validar assinatura gerada para o mesmo documento")
+        void deveValidarAssinaturaGerada() {
+            ParametrosEntrada criacao = new ParametrosEntrada(
+                    "criar", DOCUMENTO_VALIDO, CERTIFICADO_VALIDO, null
+            );
+            String assinaturaGerada = service.criarAssinatura(criacao).getAssinatura();
+
+            ParametrosEntrada validacao = new ParametrosEntrada(
+                    "validar", DOCUMENTO_VALIDO, null, assinaturaGerada
+            );
+
+            RespostaAssinatura resposta = service.validarAssinatura(validacao);
+
+            assertEquals("sucesso", resposta.getStatus());
+            assertTrue(resposta.getMensagem().contains("valida"));
+            assertEquals("SHA256withRSA", resposta.getAlgoritmo());
+        }
+
+        @Test
+        @DisplayName("Deve rejeitar assinatura que nao corresponde ao documento")
+        void deveRejeitarAssinaturaIncompativel() {
             ParametrosEntrada params = new ParametrosEntrada(
-                    "validar", DOCUMENTO_VALIDO, null, ASSINATURA_VALIDA
+                    "validar", DOCUMENTO_VALIDO, null, ASSINATURA_DIFERENTE
             );
 
             RespostaAssinatura resposta = service.validarAssinatura(params);
 
-            assertEquals("sucesso", resposta.getStatus());
-            assertTrue(resposta.getMensagem().contains("válida"));
+            assertEquals("falha", resposta.getStatus());
+            assertTrue(resposta.getMensagem().contains("invalida"));
             assertEquals("SHA256withRSA", resposta.getAlgoritmo());
         }
     }

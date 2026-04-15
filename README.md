@@ -9,7 +9,7 @@ Sistema para facilitar o acesso a funcionalidade de execucao de aplicacoes Java 
 ## Status Atual
 
 - Fluxo local implementado: `assinatura` (Python) invoca `assinador.jar` (Java)
-- Validacao de parametros e simulacao no `assinador`
+- Validacao de parametros e simulacao deterministica no `assinador`
 - Planejamento de construcao registrado no repositorio
 - Pendencias principais: modo servidor, `simulador`, provisionamento de JDK, CI/CD e releases multiplataforma
 
@@ -74,7 +74,7 @@ python assinatura/assinatura.py criar --documento SGVsbG8= --certificado cert-00
 ### Validar assinatura digital (simulacao)
 
 ```bash
-python assinatura/assinatura.py validar --documento SGVsbG8= --assinatura dGVzdA==
+python assinatura/assinatura.py validar --documento SGVsbG8= --assinatura <assinatura-gerada-para-este-documento>
 ```
 
 ### Verificar versao do CLI
