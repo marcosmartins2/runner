@@ -115,7 +115,7 @@ Tarefas operacionais:
 
 - [x] registrar a ambientacao e o planejamento no repositorio;
 - [x] parar de versionar artefatos gerados e registrar `.gitignore`;
-- [ ] revisar o CLI para incluir teste de integracao `assinatura -> assinador.jar`;
+- [x] revisar o CLI para incluir teste de integracao `assinatura -> assinador.jar`;
 - [ ] revisar mensagens de ajuda/erro para cobrir os cenarios principais do fluxo local;
 - [ ] padronizar a execucao dos testes do CLI em ambiente controlado.
 
