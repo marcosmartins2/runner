@@ -19,8 +19,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from assinatura import (
     criar_parser,
     formatar_resposta,
-    invocar_assinador,
     encontrar_java,
+    invocar_assinador,
+    invocar_assinador_http,
+    servidor_em_execucao,
 )
 
 
@@ -75,6 +77,28 @@ class TestParserArgumentos(unittest.TestCase):
             "criar", "--documento", "SGVsbG8=", "--certificado", "cert-001"
         ])
         self.assertEqual(args.jar, "/caminho/para/assinador.jar")
+
+    def test_modo_servidor_e_padrao(self):
+        """Deve usar o modo servidor quando o usuario nao escolher modo local."""
+        args = self.parser.parse_args([
+            "criar", "--documento", "SGVsbG8=", "--certificado", "cert-001"
+        ])
+        self.assertEqual(args.modo, "servidor")
+
+    def test_modo_local_explicito(self):
+        """Deve aceitar invocacao local explicita do assinador.jar."""
+        args = self.parser.parse_args([
+            "--modo", "local",
+            "validar", "--documento", "SGVsbG8=", "--assinatura", "dGVzdA=="
+        ])
+        self.assertEqual(args.modo, "local")
+
+    def test_comando_servidor_status(self):
+        """Deve parsear o comando de status do servidor."""
+        args = self.parser.parse_args(["servidor", "status"])
+        self.assertEqual(args.comando, "servidor")
+        self.assertEqual(args.acao, "status")
+        self.assertEqual(args.porta, 8080)
 
 
 class TestFormatarResposta(unittest.TestCase):
@@ -178,6 +202,40 @@ class TestInvocarAssinador(unittest.TestCase):
                 ["--operacao", "criar"],
                 jar_path="/caminho/inexistente/assinador.jar"
             )
+
+
+class TestModoServidor(unittest.TestCase):
+    """Testes para a integraÃ§Ã£o HTTP do CLI."""
+
+    @patch("assinatura._requisicao_json", return_value={"status": "sucesso"})
+    def test_servidor_em_execucao_quando_info_responde_sucesso(self, mock_request):
+        """Deve considerar o servidor ativo quando /api/info retorna sucesso."""
+        self.assertTrue(servidor_em_execucao(9090))
+        mock_request.assert_called_once_with("/api/info", 9090)
+
+    @patch("assinatura._requisicao_json", side_effect=RuntimeError("offline"))
+    def test_servidor_em_execucao_retorna_falso_quando_offline(self, mock_request):
+        """Deve retornar falso quando nÃ£o conseguir conectar ao servidor."""
+        self.assertFalse(servidor_em_execucao(9090))
+        mock_request.assert_called_once_with("/api/info", 9090)
+
+    @patch("assinatura._requisicao_json", return_value={"status": "sucesso"})
+    def test_invocar_assinador_http_criar_usa_endpoint_sign(self, mock_request):
+        """Deve enviar criaÃ§Ã£o para o endpoint HTTP de assinatura."""
+        dados = {"documento": "SGVsbG8=", "certificado": "cert-001"}
+        invocar_assinador_http("criar", dados, porta=9090)
+        mock_request.assert_called_once_with(
+            "/api/sign", 9090, metodo="POST", dados=dados
+        )
+
+    @patch("assinatura._requisicao_json", return_value={"status": "sucesso"})
+    def test_invocar_assinador_http_validar_usa_endpoint_validate(self, mock_request):
+        """Deve enviar validaÃ§Ã£o para o endpoint HTTP de validaÃ§Ã£o."""
+        dados = {"documento": "SGVsbG8=", "assinatura": "dGVzdA=="}
+        invocar_assinador_http("validar", dados, porta=9090)
+        mock_request.assert_called_once_with(
+            "/api/validate", 9090, metodo="POST", dados=dados
+        )
 
 
 if __name__ == "__main__":

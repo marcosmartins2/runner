@@ -16,6 +16,9 @@ import json
 import os
 import subprocess
 import sys
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 # Versão do CLI
@@ -26,6 +29,8 @@ ASSINADOR_JAR_PADRAO = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "..", "assinador", "target", "assinador-1.0.0.jar"
 )
+PORTA_ASSINADOR_PADRAO = 8080
+TIMEOUT_HTTP_SEGUNDOS = 3
 
 
 def encontrar_java() -> str:
@@ -130,6 +135,115 @@ def invocar_assinador(args_java: list, jar_path: str = None) -> dict:
         )
 
 
+def _resolver_jar(jar_path: str = None) -> str:
+    """Resolve e valida o caminho do assinador.jar."""
+    if jar_path is None:
+        jar_path = ASSINADOR_JAR_PADRAO
+
+    jar_path = str(Path(jar_path).resolve())
+    if not os.path.isfile(jar_path):
+        raise FileNotFoundError(
+            f"Assinador não encontrado em: {jar_path}\n"
+            "Execute 'mvn package' no diretório do assinador primeiro."
+        )
+    return jar_path
+
+
+def _url(porta: int, caminho: str) -> str:
+    return f"http://127.0.0.1:{porta}{caminho}"
+
+
+def _requisicao_json(caminho: str, porta: int, metodo: str = "GET", dados: dict = None) -> dict:
+    """Executa uma requisição HTTP JSON contra o assinador em modo servidor."""
+    corpo = None
+    headers = {"Accept": "application/json"}
+
+    if dados is not None:
+        corpo = json.dumps(dados).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+
+    request = urllib.request.Request(
+        _url(porta, caminho),
+        data=corpo,
+        headers=headers,
+        method=metodo,
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=TIMEOUT_HTTP_SEGUNDOS) as resposta:
+            return json.loads(resposta.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        mensagem = e.reason
+        try:
+            erro = json.loads(e.read().decode("utf-8"))
+            mensagem = erro.get("mensagem", mensagem)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            pass
+        raise RuntimeError(f"Assinador HTTP retornou erro {e.code}: {mensagem}")
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"Não foi possível conectar ao Assinador HTTP: {e.reason}")
+    except TimeoutError as e:
+        raise RuntimeError(f"Tempo limite ao conectar ao Assinador HTTP: {e}")
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"Resposta HTTP do Assinador não é JSON válido: {e}")
+
+
+def servidor_em_execucao(porta: int = PORTA_ASSINADOR_PADRAO) -> bool:
+    """Verifica se o assinador HTTP responde na porta informada."""
+    try:
+        resposta = _requisicao_json("/api/info", porta)
+        return resposta.get("status") == "sucesso"
+    except RuntimeError:
+        return False
+
+
+def iniciar_servidor(jar_path: str = None, porta: int = PORTA_ASSINADOR_PADRAO) -> None:
+    """Inicia o assinador.jar em modo servidor, se ele ainda não estiver ativo."""
+    if servidor_em_execucao(porta):
+        return
+
+    jar_path = _resolver_jar(jar_path)
+    java_cmd = encontrar_java()
+    comando = [java_cmd, "-jar", jar_path, "--server", "--port", str(porta)]
+
+    kwargs = {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+    }
+    if sys.platform == "win32":
+        kwargs["creationflags"] = (
+            subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+        )
+    else:
+        kwargs["start_new_session"] = True
+
+    processo = subprocess.Popen(comando, **kwargs)
+
+    prazo = time.time() + 10
+    while time.time() < prazo:
+        if servidor_em_execucao(porta):
+            return
+        if processo.poll() is not None:
+            raise RuntimeError(
+                f"Assinador HTTP encerrou durante a inicialização (código {processo.returncode})."
+            )
+        time.sleep(0.2)
+
+    raise RuntimeError(f"Assinador HTTP não respondeu na porta {porta}.")
+
+
+def parar_servidor(porta: int = PORTA_ASSINADOR_PADRAO) -> dict:
+    """Solicita a interrupção do assinador em modo servidor."""
+    return _requisicao_json("/shutdown", porta, metodo="POST")
+
+
+def invocar_assinador_http(operacao: str, dados: dict, porta: int = PORTA_ASSINADOR_PADRAO) -> dict:
+    """Invoca o assinador.jar já iniciado em modo servidor HTTP."""
+    caminho = "/api/sign" if operacao == "criar" else "/api/validate"
+    return _requisicao_json(caminho, porta, metodo="POST", dados=dados)
+
+
 def formatar_resposta(resposta: dict) -> str:
     """
     Formata a resposta do Assinador de forma legível para o usuário.
@@ -181,7 +295,15 @@ def comando_criar(args: argparse.Namespace) -> None:
     jar = getattr(args, "jar", None)
 
     try:
-        resposta = invocar_assinador(args_java, jar_path=jar)
+        if args.modo == "local":
+            resposta = invocar_assinador(args_java, jar_path=jar)
+        else:
+            iniciar_servidor(jar_path=jar, porta=args.porta)
+            resposta = invocar_assinador_http(
+                "criar",
+                {"documento": args.documento, "certificado": args.certificado},
+                porta=args.porta,
+            )
         print(formatar_resposta(resposta))
     except (FileNotFoundError, RuntimeError) as e:
         print(f"\n[ERRO]: {e}", file=sys.stderr)
@@ -199,8 +321,39 @@ def comando_validar(args: argparse.Namespace) -> None:
     jar = getattr(args, "jar", None)
 
     try:
-        resposta = invocar_assinador(args_java, jar_path=jar)
+        if args.modo == "local":
+            resposta = invocar_assinador(args_java, jar_path=jar)
+        else:
+            iniciar_servidor(jar_path=jar, porta=args.porta)
+            resposta = invocar_assinador_http(
+                "validar",
+                {"documento": args.documento, "assinatura": args.assinatura},
+                porta=args.porta,
+            )
         print(formatar_resposta(resposta))
+    except (FileNotFoundError, RuntimeError) as e:
+        print(f"\n[ERRO]: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def comando_servidor(args: argparse.Namespace) -> None:
+    """Gerencia o ciclo de vida do assinador em modo servidor."""
+    try:
+        if args.acao == "iniciar":
+            iniciar_servidor(jar_path=args.jar, porta=args.porta)
+            print(f"Assinador em execução na porta {args.porta}.")
+        elif args.acao == "parar":
+            if not servidor_em_execucao(args.porta):
+                print(f"Assinador não está em execução na porta {args.porta}.")
+                return
+            resposta = parar_servidor(porta=args.porta)
+            print(formatar_resposta(resposta))
+        elif args.acao == "status":
+            if servidor_em_execucao(args.porta):
+                resposta = _requisicao_json("/api/info", args.porta)
+                print(formatar_resposta(resposta))
+            else:
+                print(f"Assinador não está em execução na porta {args.porta}.")
     except (FileNotFoundError, RuntimeError) as e:
         print(f"\n[ERRO]: {e}", file=sys.stderr)
         sys.exit(1)
@@ -218,7 +371,9 @@ def criar_parser() -> argparse.ArgumentParser:
         description="Sistema Runner - CLI para assinatura digital",
         epilog="Exemplos:\n"
                "  assinatura criar --documento SGVsbG8= --certificado cert-001\n"
-               "  assinatura validar --documento SGVsbG8= --assinatura dGVzdA==\n",
+               "  assinatura validar --documento SGVsbG8= --assinatura dGVzdA==\n"
+               "  assinatura --modo local criar --documento SGVsbG8= --certificado cert-001\n"
+               "  assinatura servidor status\n",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
@@ -230,6 +385,19 @@ def criar_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--jar", type=str, default=None,
         help="Caminho para o assinador.jar (padrão: auto-detectar)"
+    )
+
+    parser.add_argument(
+        "--modo",
+        choices=["servidor", "local"],
+        default="servidor",
+        help="Modo de invocação do assinador.jar (padrão: servidor)"
+    )
+    parser.add_argument(
+        "--porta",
+        type=int,
+        default=PORTA_ASSINADOR_PADRAO,
+        help=f"Porta do assinador em modo servidor (padrão: {PORTA_ASSINADOR_PADRAO})"
     )
 
     subparsers = parser.add_subparsers(
@@ -269,6 +437,19 @@ def criar_parser() -> argparse.ArgumentParser:
         help="Assinatura codificada em Base64 para validar"
     )
     parser_validar.set_defaults(func=comando_validar)
+
+    # Subcomando: servidor
+    parser_servidor = subparsers.add_parser(
+        "servidor",
+        help="Gerenciar o assinador.jar em modo servidor",
+        description="Inicia, consulta ou interrompe o Assinador HTTP.",
+    )
+    parser_servidor.add_argument(
+        "acao",
+        choices=["iniciar", "parar", "status"],
+        help="Ação de gerenciamento do servidor"
+    )
+    parser_servidor.set_defaults(func=comando_servidor)
 
     return parser
 

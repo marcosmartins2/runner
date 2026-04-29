@@ -9,9 +9,10 @@ Sistema para facilitar o acesso a funcionalidade de execucao de aplicacoes Java 
 ## Status Atual
 
 - Fluxo local implementado: `assinatura` (Python) invoca `assinador.jar` (Java)
+- Modo servidor HTTP implementado para o `assinador.jar`, com start/status/stop pelo CLI
 - Validacao de parametros e simulacao deterministica no `assinador`
 - Planejamento de construcao registrado no repositorio
-- Pendencias principais: modo servidor, `simulador`, provisionamento de JDK, CI/CD e releases multiplataforma
+- Pendencias principais: `simulador`, provisionamento de JDK, CI/CD, releases multiplataforma e endurecimento do modo servidor
 
 ## Estrutura do Projeto
 
@@ -22,6 +23,8 @@ runner/
 |   `-- src/
 |       |-- main/java/com/runner/assinador/
 |       |   |-- AssinadorApp.java
+|       |   |-- AssinadorHttpServer.java
+|       |   |-- AssinadorJson.java
 |       |   |-- AssinaturaService.java
 |       |   |-- ValidadorParametros.java
 |       |   |-- ParametrosEntrada.java
@@ -77,6 +80,28 @@ python assinatura/assinatura.py criar --documento SGVsbG8= --certificado cert-00
 python assinatura/assinatura.py validar --documento SGVsbG8= --assinatura <assinatura-gerada-para-este-documento>
 ```
 
+Por padrao, o CLI usa o modo servidor: se o `assinador.jar` nao estiver em execucao na porta 8080, ele tenta inicia-lo automaticamente.
+
+### Usar invocacao local direta
+
+```bash
+python assinatura/assinatura.py --modo local criar --documento SGVsbG8= --certificado cert-001
+```
+
+### Gerenciar o servidor do Assinador
+
+```bash
+python assinatura/assinatura.py servidor iniciar
+python assinatura/assinatura.py servidor status
+python assinatura/assinatura.py servidor parar
+```
+
+Para usar outra porta:
+
+```bash
+python assinatura/assinatura.py --porta 9090 servidor iniciar
+```
+
 ### Verificar versao do CLI
 
 ```bash
@@ -124,6 +149,7 @@ python -m unittest test_assinatura.py -v
 O sistema segue o modelo C4 de documentacao arquitetural:
 
 - CLI `assinatura` (Python): recebe comandos do usuario, invoca o `assinador.jar` via `subprocess` e formata a saida.
+- `assinatura` tambem pode usar o `assinador.jar` em modo servidor HTTP para evitar reinicializacao da JVM a cada chamada.
 - `assinador.jar` (Java): valida parametros rigorosamente, simula criacao/validacao de assinaturas digitais e retorna JSON.
 
 ### Fluxo

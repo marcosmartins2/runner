@@ -45,7 +45,7 @@ Da documentacao mais recente do projeto de referencia, ficam claras quatro diret
 | US-02.1, US-02.2 e parte de US-02.3 | parcialmente atendidos | o `assinador` local ja simula criacao/validacao e valida parametros |
 | US-01.2, US-01.3 e US-01.4 | parcialmente atendidos | o CLI local ja parseia comandos, invoca o jar e formata a saida |
 | US-04.1 | nao iniciado | nao ha provisionamento automatico do JDK |
-| US-01.5 a US-01.9 | nao iniciado | nao ha modo servidor HTTP nem controle de processo |
+| US-01.5 a US-01.9 | parcialmente atendido | ha modo servidor HTTP para o assinador, start/status/stop e uso automatico pelo CLI; ainda falta parada programada por inatividade |
 | US-03.1 a US-03.4 | nao iniciado | nao ha CLI `simulador` nem download dinamico do `simulador.jar` |
 | US-05.1 a US-05.3 | nao iniciado | nao ha CI/CD, release, checksum ou Cosign |
 
@@ -164,11 +164,12 @@ Historias foco:
 
 Tarefas operacionais:
 
-- [ ] definir endpoints HTTP do `assinador`;
-- [ ] implementar inicializacao em background;
+- [x] definir endpoints HTTP do `assinador`;
+- [x] implementar inicializacao em background;
 - [ ] registrar PID/porta em area de trabalho do usuario;
-- [ ] criar comandos de start/stop/status ou equivalente no CLI;
-- [ ] criar fallback entre modo servidor e modo local.
+- [x] criar comandos de start/stop/status ou equivalente no CLI;
+- [x] criar selecao explicita entre modo servidor e modo local.
+- [ ] implementar interrupcao programada por inatividade.
 
 ### Iteracao 4 - simulador do HubSaude
 
