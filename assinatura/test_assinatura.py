@@ -9,6 +9,7 @@ do assinador.jar.
 import json
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
@@ -22,6 +23,10 @@ from assinatura import (
     encontrar_java,
     invocar_assinador,
     invocar_assinador_http,
+    iniciar_servidor,
+    ler_estado_servidor,
+    parar_servidor,
+    registrar_estado_servidor,
     servidor_em_execucao,
 )
 
@@ -99,6 +104,12 @@ class TestParserArgumentos(unittest.TestCase):
         self.assertEqual(args.comando, "servidor")
         self.assertEqual(args.acao, "status")
         self.assertEqual(args.porta, 8080)
+
+    def test_comando_servidor_aceita_parada_programada(self):
+        """Deve aceitar timeout de inatividade no comando iniciar."""
+        args = self.parser.parse_args(["servidor", "iniciar", "--parar-apos-minutos", "30"])
+        self.assertEqual(args.acao, "iniciar")
+        self.assertEqual(args.parar_apos_minutos, 30)
 
 
 class TestFormatarResposta(unittest.TestCase):
@@ -236,6 +247,63 @@ class TestModoServidor(unittest.TestCase):
         mock_request.assert_called_once_with(
             "/api/validate", 9090, metodo="POST", dados=dados
         )
+
+
+    @patch("assinatura.registrar_estado_servidor")
+    @patch("assinatura.subprocess.Popen")
+    @patch("assinatura.encontrar_java", return_value="java")
+    @patch("assinatura._resolver_jar", return_value="/fake/assinador.jar")
+    @patch("assinatura.servidor_em_execucao", side_effect=[False, True])
+    def test_iniciar_servidor_envia_timeout_e_registra_estado(
+            self, mock_online, mock_resolver, mock_java, mock_popen, mock_registrar):
+        """Deve iniciar o servidor com parada programada e registrar PID/porta."""
+        processo = MagicMock()
+        processo.pid = 1234
+        processo.poll.return_value = None
+        mock_popen.return_value = processo
+
+        iniciar_servidor(
+            jar_path="/fake/assinador.jar",
+            porta=9090,
+            parar_apos_minutos=15,
+        )
+
+        comando = mock_popen.call_args.args[0]
+        self.assertEqual(
+            comando,
+            [
+                "java", "-jar", "/fake/assinador.jar",
+                "--server", "--port", "9090",
+                "--parar-apos-minutos", "15",
+            ],
+        )
+        mock_registrar.assert_called_once_with(1234, 9090, "/fake/assinador.jar")
+
+    def test_registrar_e_ler_estado_servidor(self):
+        """Deve persistir PID, porta e caminho do JAR em arquivo local."""
+        with tempfile.TemporaryDirectory() as tmp:
+            arquivo_estado = Path(tmp) / "assinador-server.json"
+            with patch("assinatura.DIRETORIO_ESTADO", Path(tmp)), \
+                    patch("assinatura.ARQUIVO_ESTADO_ASSINADOR", arquivo_estado):
+                registrar_estado_servidor(1234, 9090, "/fake/assinador.jar")
+                estado = ler_estado_servidor()
+
+        self.assertEqual(estado["pid"], 1234)
+        self.assertEqual(estado["porta"], 9090)
+        self.assertIn("assinador.jar", estado["jar"])
+
+    @patch("assinatura._requisicao_json", return_value={"status": "sucesso"})
+    def test_parar_servidor_remove_estado_local(self, mock_request):
+        """Deve remover arquivo de estado quando o servidor for interrompido."""
+        with tempfile.TemporaryDirectory() as tmp:
+            arquivo_estado = Path(tmp) / "assinador-server.json"
+            arquivo_estado.write_text("{}", encoding="utf-8")
+            with patch("assinatura.ARQUIVO_ESTADO_ASSINADOR", arquivo_estado):
+                resposta = parar_servidor(9090)
+                existe = arquivo_estado.exists()
+
+        self.assertEqual(resposta["status"], "sucesso")
+        self.assertFalse(existe)
 
 
 if __name__ == "__main__":

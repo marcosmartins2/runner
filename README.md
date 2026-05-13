@@ -10,6 +10,8 @@ Sistema para facilitar o acesso a funcionalidade de execucao de aplicacoes Java 
 
 - Fluxo local implementado: `assinatura` (Python) invoca `assinador.jar` (Java)
 - Modo servidor HTTP implementado para o `assinador.jar`, com start/status/stop pelo CLI
+- Registro local de PID/porta do servidor em `.hubsaude/assinador-server.json`
+- Parada programada por inatividade para o servidor do Assinador
 - Validacao de parametros e simulacao deterministica no `assinador`
 - Planejamento de construcao registrado no repositorio
 - Pendencias principais: `simulador`, provisionamento de JDK, CI/CD, releases multiplataforma e endurecimento do modo servidor
@@ -100,6 +102,18 @@ Para usar outra porta:
 
 ```bash
 python assinatura/assinatura.py --porta 9090 servidor iniciar
+```
+
+Para encerrar automaticamente o servidor apos um periodo sem requisicoes:
+
+```bash
+python assinatura/assinatura.py servidor iniciar --parar-apos-minutos 30
+```
+
+Ao iniciar o servidor pela CLI, o Runner registra PID, porta, caminho do JAR e horario de inicio em:
+
+```text
+~/.hubsaude/assinador-server.json
 ```
 
 ### Verificar versao do CLI

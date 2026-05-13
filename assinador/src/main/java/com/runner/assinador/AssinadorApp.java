@@ -11,12 +11,14 @@ public class AssinadorApp {
     private static final ObjectMapper mapper = new ObjectMapper()
             .enable(SerializationFeature.INDENT_OUTPUT);
     private static final int PORTA_PADRAO = 8080;
+    private static final int SEM_TIMEOUT_INATIVIDADE = 0;
 
     public static void main(String[] args) {
         try {
             if (deveIniciarServidor(args)) {
                 int porta = obterPorta(args);
-                new AssinadorHttpServer(porta).iniciar();
+                int timeoutInatividadeMinutos = obterTimeoutInatividadeMinutos(args);
+                new AssinadorHttpServer(porta, timeoutInatividadeMinutos).iniciar();
                 return;
             }
 
@@ -82,6 +84,26 @@ public class AssinadorApp {
         return PORTA_PADRAO;
     }
 
+    private static int obterTimeoutInatividadeMinutos(String[] args) {
+        for (int i = 0; i < args.length; i++) {
+            if (("--idle-timeout-minutes".equals(args[i]) || "--parar-apos-minutos".equals(args[i]))
+                    && i + 1 < args.length) {
+                try {
+                    int minutos = Integer.parseInt(args[i + 1]);
+                    if (minutos < 0) {
+                        throw new IllegalArgumentException(
+                                "Timeout de inatividade nao pode ser negativo: " + minutos);
+                    }
+                    return minutos;
+                } catch (NumberFormatException e) {
+                    throw new IllegalArgumentException(
+                            "Timeout de inatividade invalido: " + args[i + 1]);
+                }
+            }
+        }
+        return SEM_TIMEOUT_INATIVIDADE;
+    }
+
     private static void imprimirUso() {
         System.err.println();
         System.err.println("Uso:");
@@ -93,6 +115,7 @@ public class AssinadorApp {
         System.err.println();
         System.err.println("  Modo servidor:");
         System.err.println("    java -jar assinador.jar --server --port 8080");
+        System.err.println("    java -jar assinador.jar --server --parar-apos-minutos 30");
         System.err.println();
         System.err.println("Parametros:");
         System.err.println("  --operacao     Operacao a realizar: 'criar' ou 'validar'");
@@ -101,5 +124,6 @@ public class AssinadorApp {
         System.err.println("  --assinatura   Assinatura em Base64 para validacao");
         System.err.println("  --server       Inicia o Assinador em modo servidor HTTP");
         System.err.println("  --port         Porta do servidor HTTP (padrao: 8080)");
+        System.err.println("  --parar-apos-minutos  Encerra o servidor apos N minutos sem interacao (0 desativa)");
     }
 }

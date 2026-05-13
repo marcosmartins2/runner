@@ -166,10 +166,10 @@ Tarefas operacionais:
 
 - [x] definir endpoints HTTP do `assinador`;
 - [x] implementar inicializacao em background;
-- [ ] registrar PID/porta em area de trabalho do usuario;
+- [x] registrar PID/porta em area de trabalho do usuario;
 - [x] criar comandos de start/stop/status ou equivalente no CLI;
 - [x] criar selecao explicita entre modo servidor e modo local.
-- [ ] implementar interrupcao programada por inatividade.
+- [x] implementar interrupcao programada por inatividade.
 
 ### Iteracao 4 - simulador do HubSaude
 

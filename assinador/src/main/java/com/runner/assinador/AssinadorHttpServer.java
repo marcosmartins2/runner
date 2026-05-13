@@ -12,6 +12,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Servidor HTTP minimo para permitir chamadas "warm start" ao Assinador.
@@ -19,11 +21,20 @@ import java.util.concurrent.Executors;
 public class AssinadorHttpServer {
 
     private final int porta;
+    private final int timeoutInatividadeMinutos;
     private HttpServer servidor;
     private ExecutorService executor;
+    private ScheduledExecutorService monitorInatividade;
+    private volatile long ultimaInteracaoMillis;
 
     public AssinadorHttpServer(int porta) {
+        this(porta, 0);
+    }
+
+    public AssinadorHttpServer(int porta, int timeoutInatividadeMinutos) {
         this.porta = porta;
+        this.timeoutInatividadeMinutos = timeoutInatividadeMinutos;
+        this.ultimaInteracaoMillis = System.currentTimeMillis();
     }
 
     public void iniciar() throws IOException {
@@ -35,11 +46,13 @@ public class AssinadorHttpServer {
         executor = Executors.newCachedThreadPool();
         servidor.setExecutor(executor);
         servidor.start();
+        iniciarMonitorInatividade();
 
         System.out.println("Assinador HTTP em execucao na porta " + porta);
     }
 
     private void info(HttpExchange exchange) throws IOException {
+        registrarInteracao();
         if (!permitirMetodo(exchange, "GET")) {
             return;
         }
@@ -48,10 +61,12 @@ public class AssinadorHttpServer {
         resposta.put("status", "sucesso");
         resposta.put("mensagem", "Assinador em execucao.");
         resposta.put("porta", porta);
+        resposta.put("timeoutInatividadeMinutos", timeoutInatividadeMinutos);
         responderJson(exchange, 200, resposta);
     }
 
     private void sign(HttpExchange exchange) throws IOException {
+        registrarInteracao();
         if (!permitirMetodo(exchange, "POST")) {
             return;
         }
@@ -73,6 +88,7 @@ public class AssinadorHttpServer {
     }
 
     private void validate(HttpExchange exchange) throws IOException {
+        registrarInteracao();
         if (!permitirMetodo(exchange, "POST")) {
             return;
         }
@@ -94,6 +110,7 @@ public class AssinadorHttpServer {
     }
 
     private void shutdown(HttpExchange exchange) throws IOException {
+        registrarInteracao();
         if (!permitirMetodo(exchange, "POST")) {
             return;
         }
@@ -109,11 +126,42 @@ public class AssinadorHttpServer {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
-            servidor.stop(0);
-            executor.shutdownNow();
+            encerrar();
         });
         interrupcao.setDaemon(false);
         interrupcao.start();
+    }
+
+    private void iniciarMonitorInatividade() {
+        if (timeoutInatividadeMinutos <= 0) {
+            return;
+        }
+
+        monitorInatividade = Executors.newSingleThreadScheduledExecutor();
+        long timeoutMillis = TimeUnit.MINUTES.toMillis(timeoutInatividadeMinutos);
+        monitorInatividade.scheduleAtFixedRate(() -> {
+            long inativoPor = System.currentTimeMillis() - ultimaInteracaoMillis;
+            if (inativoPor >= timeoutMillis) {
+                System.out.println("Assinador HTTP encerrado por inatividade.");
+                encerrar();
+            }
+        }, 1, 1, TimeUnit.SECONDS);
+    }
+
+    private void registrarInteracao() {
+        ultimaInteracaoMillis = System.currentTimeMillis();
+    }
+
+    private void encerrar() {
+        if (servidor != null) {
+            servidor.stop(0);
+        }
+        if (executor != null) {
+            executor.shutdownNow();
+        }
+        if (monitorInatividade != null) {
+            monitorInatividade.shutdownNow();
+        }
     }
 
     private boolean permitirMetodo(HttpExchange exchange, String metodo) throws IOException {

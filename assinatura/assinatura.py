@@ -31,6 +31,8 @@ ASSINADOR_JAR_PADRAO = os.path.join(
 )
 PORTA_ASSINADOR_PADRAO = 8080
 TIMEOUT_HTTP_SEGUNDOS = 3
+DIRETORIO_ESTADO = Path.home() / ".hubsaude"
+ARQUIVO_ESTADO_ASSINADOR = DIRETORIO_ESTADO / "assinador-server.json"
 
 
 def encontrar_java() -> str:
@@ -197,7 +199,44 @@ def servidor_em_execucao(porta: int = PORTA_ASSINADOR_PADRAO) -> bool:
         return False
 
 
-def iniciar_servidor(jar_path: str = None, porta: int = PORTA_ASSINADOR_PADRAO) -> None:
+def registrar_estado_servidor(pid: int, porta: int, jar_path: str) -> None:
+    """Registra metadados locais do assinador HTTP iniciado pela CLI."""
+    DIRETORIO_ESTADO.mkdir(parents=True, exist_ok=True)
+    estado = {
+        "pid": pid,
+        "porta": porta,
+        "jar": str(Path(jar_path).resolve()),
+        "iniciadoEm": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+    }
+    ARQUIVO_ESTADO_ASSINADOR.write_text(
+        json.dumps(estado, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def ler_estado_servidor() -> dict:
+    """Le o arquivo de estado local do assinador, se existir."""
+    if not ARQUIVO_ESTADO_ASSINADOR.is_file():
+        return {}
+    try:
+        return json.loads(ARQUIVO_ESTADO_ASSINADOR.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def remover_estado_servidor() -> None:
+    """Remove o arquivo de estado local do assinador, se existir."""
+    try:
+        ARQUIVO_ESTADO_ASSINADOR.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def iniciar_servidor(
+    jar_path: str = None,
+    porta: int = PORTA_ASSINADOR_PADRAO,
+    parar_apos_minutos: int = 0,
+) -> None:
     """Inicia o assinador.jar em modo servidor, se ele ainda não estiver ativo."""
     if servidor_em_execucao(porta):
         return
@@ -205,6 +244,8 @@ def iniciar_servidor(jar_path: str = None, porta: int = PORTA_ASSINADOR_PADRAO) 
     jar_path = _resolver_jar(jar_path)
     java_cmd = encontrar_java()
     comando = [java_cmd, "-jar", jar_path, "--server", "--port", str(porta)]
+    if parar_apos_minutos and parar_apos_minutos > 0:
+        comando += ["--parar-apos-minutos", str(parar_apos_minutos)]
 
     kwargs = {
         "stdin": subprocess.DEVNULL,
@@ -223,6 +264,7 @@ def iniciar_servidor(jar_path: str = None, porta: int = PORTA_ASSINADOR_PADRAO) 
     prazo = time.time() + 10
     while time.time() < prazo:
         if servidor_em_execucao(porta):
+            registrar_estado_servidor(processo.pid, porta, jar_path)
             return
         if processo.poll() is not None:
             raise RuntimeError(
@@ -235,7 +277,9 @@ def iniciar_servidor(jar_path: str = None, porta: int = PORTA_ASSINADOR_PADRAO) 
 
 def parar_servidor(porta: int = PORTA_ASSINADOR_PADRAO) -> dict:
     """Solicita a interrupção do assinador em modo servidor."""
-    return _requisicao_json("/shutdown", porta, metodo="POST")
+    resposta = _requisicao_json("/shutdown", porta, metodo="POST")
+    remover_estado_servidor()
+    return resposta
 
 
 def invocar_assinador_http(operacao: str, dados: dict, porta: int = PORTA_ASSINADOR_PADRAO) -> dict:
@@ -267,6 +311,12 @@ def formatar_resposta(resposta: dict) -> str:
 
     if "algoritmo" in resposta:
         linhas.append(f"  Algoritmo:   {resposta['algoritmo']}")
+
+    if "porta" in resposta:
+        linhas.append(f"  Porta:       {resposta['porta']}")
+
+    if "timeoutInatividadeMinutos" in resposta:
+        linhas.append(f"  Timeout:     {resposta['timeoutInatividadeMinutos']} min")
 
     if "certificado" in resposta:
         linhas.append(f"  Certificado: {resposta['certificado']}")
@@ -340,7 +390,11 @@ def comando_servidor(args: argparse.Namespace) -> None:
     """Gerencia o ciclo de vida do assinador em modo servidor."""
     try:
         if args.acao == "iniciar":
-            iniciar_servidor(jar_path=args.jar, porta=args.porta)
+            iniciar_servidor(
+                jar_path=args.jar,
+                porta=args.porta,
+                parar_apos_minutos=args.parar_apos_minutos,
+            )
             print(f"Assinador em execução na porta {args.porta}.")
         elif args.acao == "parar":
             if not servidor_em_execucao(args.porta):
@@ -352,6 +406,9 @@ def comando_servidor(args: argparse.Namespace) -> None:
             if servidor_em_execucao(args.porta):
                 resposta = _requisicao_json("/api/info", args.porta)
                 print(formatar_resposta(resposta))
+                estado = ler_estado_servidor()
+                if estado and estado.get("porta") == args.porta:
+                    print(f"PID: {estado.get('pid')} | Porta registrada: {estado.get('porta')}")
             else:
                 print(f"Assinador não está em execução na porta {args.porta}.")
     except (FileNotFoundError, RuntimeError) as e:
@@ -448,6 +505,12 @@ def criar_parser() -> argparse.ArgumentParser:
         "acao",
         choices=["iniciar", "parar", "status"],
         help="Ação de gerenciamento do servidor"
+    )
+    parser_servidor.add_argument(
+        "--parar-apos-minutos",
+        type=int,
+        default=0,
+        help="Encerra o assinador apos N minutos sem interacao (somente iniciar)"
     )
     parser_servidor.set_defaults(func=comando_servidor)
 
