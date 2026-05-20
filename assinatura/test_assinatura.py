@@ -216,7 +216,7 @@ class TestInvocarAssinador(unittest.TestCase):
 
 
 class TestModoServidor(unittest.TestCase):
-    """Testes para a integraÃ§Ã£o HTTP do CLI."""
+    """Testes para a integração HTTP do CLI."""
 
     @patch("assinatura._requisicao_json", return_value={"status": "sucesso"})
     def test_servidor_em_execucao_quando_info_responde_sucesso(self, mock_request):
@@ -226,13 +226,13 @@ class TestModoServidor(unittest.TestCase):
 
     @patch("assinatura._requisicao_json", side_effect=RuntimeError("offline"))
     def test_servidor_em_execucao_retorna_falso_quando_offline(self, mock_request):
-        """Deve retornar falso quando nÃ£o conseguir conectar ao servidor."""
+        """Deve retornar falso quando não conseguir conectar ao servidor."""
         self.assertFalse(servidor_em_execucao(9090))
         mock_request.assert_called_once_with("/api/info", 9090)
 
     @patch("assinatura._requisicao_json", return_value={"status": "sucesso"})
     def test_invocar_assinador_http_criar_usa_endpoint_sign(self, mock_request):
-        """Deve enviar criaÃ§Ã£o para o endpoint HTTP de assinatura."""
+        """Deve enviar criação para o endpoint HTTP de assinatura."""
         dados = {"documento": "SGVsbG8=", "certificado": "cert-001"}
         invocar_assinador_http("criar", dados, porta=9090)
         mock_request.assert_called_once_with(
@@ -241,7 +241,7 @@ class TestModoServidor(unittest.TestCase):
 
     @patch("assinatura._requisicao_json", return_value={"status": "sucesso"})
     def test_invocar_assinador_http_validar_usa_endpoint_validate(self, mock_request):
-        """Deve enviar validaÃ§Ã£o para o endpoint HTTP de validaÃ§Ã£o."""
+        """Deve enviar validação para o endpoint HTTP de validação."""
         dados = {"documento": "SGVsbG8=", "assinatura": "dGVzdA=="}
         invocar_assinador_http("validar", dados, porta=9090)
         mock_request.assert_called_once_with(
