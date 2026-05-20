@@ -2,9 +2,12 @@
 
 Sistema para facilitar o acesso a funcionalidade de execucao de aplicacoes Java via linha de comandos.
 
-## Documentacao de Planejamento
+## Documentacao
 
+- [Especificacao](./especificacao.md) - escopo, requisitos (US-01 a US-05), entregaveis
+- [Design (C4)](./design.md) - diagrama de contexto, de conteineres e decisoes de design
 - [Planejamento e ambientacao](./docs/planejamento.md)
+- [Diagramas PlantUML](./diagramas/)
 
 ## Status Atual
 
@@ -13,14 +16,17 @@ Sistema para facilitar o acesso a funcionalidade de execucao de aplicacoes Java 
 - Registro local de PID/porta do servidor em `.hubsaude/assinador-server.json`
 - Parada programada por inatividade para o servidor do Assinador
 - Validacao de parametros e simulacao deterministica no `assinador`
-- Planejamento de construcao registrado no repositorio
-- Pendencias principais: `simulador`, provisionamento de JDK, CI/CD, releases multiplataforma e endurecimento do modo servidor
+- CLI `simulador` (Python) com iniciar/parar/status do `simulador.jar`
+- Pipeline CI configurado (testes Java e Python multi-OS)
+- Especificacao, design C4 e diagramas registrados no repositorio
+- Pendencias principais: download dinamico do `simulador.jar`, provisionamento de JDK, releases multiplataforma com Cosign, PKCS#11
 
 ## Estrutura do Projeto
 
 ```text
 runner/
-|-- assinador/              # Aplicacao Java (assinador.jar)
+|-- .github/workflows/ci.yml  # Pipeline de testes (Java + Python)
+|-- assinador/                # Aplicacao Java (assinador.jar)
 |   |-- pom.xml
 |   `-- src/
 |       |-- main/java/com/runner/assinador/
@@ -33,12 +39,24 @@ runner/
 |       |   `-- RespostaAssinatura.java
 |       `-- test/java/com/runner/assinador/
 |           `-- AssinadorAppTest.java
-|-- assinatura/             # CLI Python
+|-- assinatura/               # CLI Python (assinatura)
 |   |-- assinatura.py
 |   |-- test_assinatura.py
 |   `-- requirements.txt
+|-- simulador/                # CLI Python (simulador)
+|   |-- simulador.py
+|   |-- test_simulador.py
+|   `-- requirements.txt
+|-- diagramas/                # Diagramas C4 em PlantUML
+|   |-- contexto.puml
+|   `-- conteineres.puml
 |-- docs/
 |   `-- planejamento.md
+|-- especificacao.md
+|-- design.md
+|-- geraimagens.bat           # Gera SVGs dos diagramas (Windows)
+|-- geraimagens.sh            # Gera SVGs dos diagramas (Linux/Mac)
+|-- LICENSE
 `-- README.md
 ```
 
@@ -151,12 +169,45 @@ cd assinador
 mvn test
 ```
 
-### Testes Python (CLI)
+### Testes Python (CLI assinatura)
 
 ```bash
 cd assinatura
 python -m unittest test_assinatura.py -v
 ```
+
+### Testes Python (CLI simulador)
+
+```bash
+cd simulador
+python -m unittest test_simulador.py -v
+```
+
+## CLI simulador
+
+Comandos basicos para gerenciar o ciclo de vida do `simulador.jar`:
+
+```bash
+python simulador/simulador.py iniciar --jar /caminho/para/simulador.jar
+python simulador/simulador.py status
+python simulador/simulador.py parar
+```
+
+A porta padrao e 8443. Estado local (PID/porta/jar) e gravado em `~/.hubsaude/simulador-server.json`.
+
+## Diagramas (C4)
+
+Os diagramas estao em [diagramas/](./diagramas/) (PlantUML). Para gerar os SVGs (requer Java):
+
+```bash
+# Linux / macOS
+./geraimagens.sh
+
+# Windows
+geraimagens.bat
+```
+
+Os SVGs sao gravados em `diagramas/imagens/` e referenciados em [design.md](./design.md).
 
 ## Arquitetura
 

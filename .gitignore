@@ -9,6 +9,9 @@ venv/
 target/
 dependency-reduced-pom.xml
 
+# PlantUML (SVGs sao regerados pelo geraimagens.sh/bat)
+diagramas/imagens/
+
 # IDE / OS
 .idea/
 .vscode/
