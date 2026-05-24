@@ -1,3 +1,0 @@
-# O CLI 'simulador' usa apenas a biblioteca padrao do Python.
-# Este arquivo existe por simetria com 'assinatura' e para uso futuro
-# (por exemplo, ferramentas de teste como pytest ou coverage).
