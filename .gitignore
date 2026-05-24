@@ -1,9 +1,9 @@
-# Python
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.venv/
-venv/
+# Go
+bin/
+dist/
+*.test
+*.out
+coverage.txt
 
 # Java / Maven
 target/
@@ -17,3 +17,6 @@ diagramas/imagens/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Estado local
+.hubsaude/
