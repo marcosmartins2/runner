@@ -22,14 +22,18 @@ public class AssinaturaService {
      */
     public RespostaAssinatura criarAssinatura(ParametrosEntrada parametros) {
         String assinaturaSimulada = gerarAssinaturaSimulada(parametros.getDocumento());
+        String mensagem = parametros.getPkcs11Provider() != null
+                ? "Assinatura digital criada com sucesso via dispositivo PKCS#11 (simulacao)."
+                : "Assinatura digital criada com sucesso (simulacao).";
 
         return new RespostaAssinatura(
                 "sucesso",
-                "Assinatura digital criada com sucesso (simulacao).",
+                mensagem,
                 assinaturaSimulada,
                 Instant.now().toString(),
                 parametros.getCertificado(),
-                "SHA256withRSA"
+                "SHA256withRSA",
+                parametros.getPkcs11Provider()
         );
     }
 

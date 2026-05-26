@@ -69,7 +69,13 @@ public class ValidadorParametros {
             validarBase64(assinatura, "assinatura");
         }
 
-        return new ParametrosEntrada(operacao, documento, certificado, assinatura);
+        // Parametro opcional: provider PKCS#11 (token/smart card).
+        String pkcs11 = parametros.get("pkcs11");
+        if (pkcs11 != null && pkcs11.isBlank()) {
+            pkcs11 = null;
+        }
+
+        return new ParametrosEntrada(operacao, documento, certificado, assinatura, pkcs11);
     }
 
     /**

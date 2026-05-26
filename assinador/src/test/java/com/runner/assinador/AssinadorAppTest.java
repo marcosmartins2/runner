@@ -195,5 +195,34 @@ class AssinadorAppTest {
             assertTrue(resposta.getMensagem().contains("invalida"));
             assertEquals("SHA256withRSA", resposta.getAlgoritmo());
         }
+
+        @Test
+        @DisplayName("Deve registrar uso de dispositivo PKCS#11 quando informado")
+        void devePropagarPkcs11Provider() {
+            ParametrosEntrada params = new ParametrosEntrada(
+                    "criar", DOCUMENTO_VALIDO, CERTIFICADO_VALIDO, null, "SunPKCS11-eToken"
+            );
+            RespostaAssinatura resposta = service.criarAssinatura(params);
+            assertEquals("SunPKCS11-eToken", resposta.getPkcs11Provider());
+            assertTrue(resposta.getMensagem().contains("PKCS#11"));
+        }
+    }
+
+    @Nested
+    @DisplayName("Suporte PKCS#11")
+    class PKCS11Test {
+
+        @Test
+        @DisplayName("ValidadorParametros aceita --pkcs11 opcional")
+        void deveAceitarParametroPkcs11() {
+            String[] args = {
+                    "--operacao", "criar",
+                    "--documento", DOCUMENTO_VALIDO,
+                    "--certificado", CERTIFICADO_VALIDO,
+                    "--pkcs11", "SunPKCS11-eToken"
+            };
+            ParametrosEntrada p = ValidadorParametros.validar(args);
+            assertEquals("SunPKCS11-eToken", p.getPkcs11Provider());
+        }
     }
 }

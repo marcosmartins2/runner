@@ -9,15 +9,19 @@ public class ParametrosEntrada {
     private final String documento;
     private final String certificado;
     private final String assinatura;
+    private final String pkcs11Provider;
 
-    /**
-     * Construtor para operação de criação de assinatura.
-     */
     public ParametrosEntrada(String operacao, String documento, String certificado, String assinatura) {
+        this(operacao, documento, certificado, assinatura, null);
+    }
+
+    public ParametrosEntrada(String operacao, String documento, String certificado,
+                              String assinatura, String pkcs11Provider) {
         this.operacao = operacao;
         this.documento = documento;
         this.certificado = certificado;
         this.assinatura = assinatura;
+        this.pkcs11Provider = pkcs11Provider;
     }
 
     public String getOperacao() {
@@ -36,6 +40,14 @@ public class ParametrosEntrada {
         return assinatura;
     }
 
+    /**
+     * Identificador do provider PKCS#11 (token/smart card) usado para simulacao
+     * de assinatura. Quando null, o servico nao usa dispositivo criptografico.
+     */
+    public String getPkcs11Provider() {
+        return pkcs11Provider;
+    }
+
     @Override
     public String toString() {
         return "ParametrosEntrada{" +
@@ -43,6 +55,7 @@ public class ParametrosEntrada {
                 ", documento='" + documento + '\'' +
                 ", certificado='" + certificado + '\'' +
                 ", assinatura='" + assinatura + '\'' +
+                ", pkcs11Provider='" + pkcs11Provider + '\'' +
                 '}';
     }
 }
