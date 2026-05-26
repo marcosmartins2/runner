@@ -1,0 +1,169 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  id-token: write   # OIDC necessario para Cosign
+
+jobs:
+  test-go:
+    name: Tests - CLIs Go (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - name: go mod tidy
+        run: go mod tidy
+      - name: go vet
+        run: go vet ./...
+      - name: go test
+        run: go test ./...
+
+  test-java:
+    name: Tests - Java (assinador + simulador)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: Test assinador
+        working-directory: assinador
+        run: mvn --batch-mode test
+      - name: Test simulador
+        working-directory: simuladorjar
+        run: mvn --batch-mode test
+
+  build:
+    name: Build artefatos
+    needs: [test-go, test-java]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Extrair versao da tag
+        id: versao
+        run: echo "TAG=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: go mod tidy
+        run: go mod tidy
+
+      - name: Compilar CLIs nativas
+        env:
+          TAG: ${{ steps.versao.outputs.TAG }}
+        run: |
+          mkdir -p dist
+          for target in linux/amd64 windows/amd64 darwin/amd64; do
+            os="${target%/*}"
+            arch="${target#*/}"
+            ext=""
+            if [ "$os" = "windows" ]; then ext=".exe"; fi
+            GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 \
+              go build -ldflags "-X main.version=${TAG}" \
+              -o "dist/assinatura-${TAG}-${os}-${arch}${ext}" ./cmd/assinatura
+            GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 \
+              go build -ldflags "-X main.version=${TAG}" \
+              -o "dist/simulador-${TAG}-${os}-${arch}${ext}" ./cmd/simulador
+          done
+
+      - name: Empacotar assinador.jar
+        working-directory: assinador
+        run: mvn --batch-mode package -DskipTests
+
+      - name: Empacotar simulador.jar
+        working-directory: simuladorjar
+        run: mvn --batch-mode package -DskipTests
+
+      - name: Copiar JARs para dist/
+        run: |
+          cp assinador/target/assinador-*.jar dist/assinador.jar
+          cp simuladorjar/target/simulador.jar dist/simulador.jar
+
+      - name: Atualizar release.json com a tag publicada
+        env:
+          TAG: ${{ steps.versao.outputs.TAG }}
+        run: |
+          TAG_SEM_V="${TAG#v}"
+          # Substitui as versoes do manifesto pela tag publicada.
+          sed -E "s/\"version\": \"[^\"]+\"/\"version\": \"${TAG_SEM_V}\"/g" \
+            release.json > dist/release.json
+          cat dist/release.json
+
+      - name: Gerar checksums SHA256
+        working-directory: dist
+        run: |
+          sha256sum * > checksums.txt
+          cat checksums.txt
+
+      - name: Instalar Cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: 'v2.2.4'
+
+      - name: Assinar artefatos com Cosign (keyless OIDC)
+        working-directory: dist
+        env:
+          COSIGN_YES: "true"
+        run: |
+          for artefato in assinatura-* simulador-* assinador.jar simulador.jar; do
+            if [ -f "$artefato" ]; then
+              cosign sign-blob \
+                --yes \
+                --output-signature "${artefato}.sig" \
+                --output-certificate "${artefato}.pem" \
+                "$artefato"
+            fi
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: dist/
+          retention-days: 14
+
+  publish:
+    name: Publicar GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: dist/
+      - name: Listar artefatos
+        run: ls -la dist/
+      - name: Criar GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/assinatura-*
+            dist/simulador-*
+            dist/assinador.jar
+            dist/assinador.jar.sig
+            dist/assinador.jar.pem
+            dist/simulador.jar
+            dist/simulador.jar.sig
+            dist/simulador.jar.pem
+            dist/checksums.txt
+            dist/release.json
+          generate_release_notes: true
+          fail_on_unmatched_files: false
