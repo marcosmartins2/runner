@@ -1,224 +1,164 @@
 # Sistema Runner
 
-Sistema para facilitar o acesso a funcionalidade de execucao de aplicacoes Java via linha de comandos.
+Sistema para facilitar o acesso a funcionalidade de execucao de aplicacoes Java
+via linha de comandos. Atende as historias US-01..US-05 da disciplina IIS
+(2026-01) e disponibiliza **binarios nativos para Windows, Linux e macOS**.
 
 ## Documentacao
 
-- [Especificacao](./especificacao.md) - escopo, requisitos (US-01 a US-05), entregaveis
-- [Design (C4)](./design.md) - diagrama de contexto, de conteineres e decisoes de design
-- [Planejamento e ambientacao](./docs/planejamento.md)
+- [Especificacao](./especificacao.md) - escopo, US-01 a US-05, entregaveis
+- [Design (C4)](./design.md) - contexto, conteineres, decisoes
+- [Sprint 1](./docs/sprint-1-tasks.md) - tarefas operacionais
 - [Diagramas PlantUML](./diagramas/)
 
-## Status Atual
+## Status
 
-- Fluxo local implementado: `assinatura` (Python) invoca `assinador.jar` (Java)
-- Modo servidor HTTP implementado para o `assinador.jar`, com start/status/stop pelo CLI
-- Registro local de PID/porta do servidor em `.hubsaude/assinador-server.json`
-- Parada programada por inatividade para o servidor do Assinador
-- Validacao de parametros e simulacao deterministica no `assinador`
-- CLI `simulador` (Python) com iniciar/parar/status do `simulador.jar`
-- Pipeline CI configurado (testes Java e Python multi-OS)
-- Especificacao, design C4 e diagramas registrados no repositorio
-- Pendencias principais: download dinamico do `simulador.jar`, provisionamento de JDK, releases multiplataforma com Cosign, PKCS#11
+Implementacao concluida, atendendo ao [issue #1](https://github.com/kyriosdata/runner/issues/1)
+("Sao esperadas versoes nativas em 3 plataformas") e cobrindo:
 
-## Estrutura do Projeto
+- CLIs `assinatura` e `simulador` em Go, compilados como binarios nativos
+  para `windows/amd64`, `linux/amd64` e `darwin/amd64` (US-05).
+- Modo local e modo servidor HTTP para o `assinador.jar`, com parada
+  programada por inatividade (US-01, US-02).
+- Validacao rigorosa de parametros, simulacao de criacao/validacao de
+  assinatura digital e suporte opcional a dispositivos PKCS#11 (US-02).
+- CLI `simulador` para gerenciar o ciclo de vida do `simulador.jar`,
+  incluindo download dinamico via `release.json` (US-03).
+- Provisionamento automatico do JRE Temurin (Adoptium) quando ausente
+  na maquina do usuario (US-04).
+- Pipeline CI/CD com testes em 3 plataformas, cross-compilation e
+  assinatura dos artefatos via Cosign/Sigstore (US-05, secao 9 da
+  especificacao).
+
+## Estrutura
 
 ```text
 runner/
-|-- .github/workflows/ci.yml  # Pipeline de testes (Java + Python)
-|-- assinador/                # Aplicacao Java (assinador.jar)
-|   |-- pom.xml
-|   `-- src/
-|       |-- main/java/com/runner/assinador/
-|       |   |-- AssinadorApp.java
-|       |   |-- AssinadorHttpServer.java
-|       |   |-- AssinadorJson.java
-|       |   |-- AssinaturaService.java
-|       |   |-- ValidadorParametros.java
-|       |   |-- ParametrosEntrada.java
-|       |   `-- RespostaAssinatura.java
-|       `-- test/java/com/runner/assinador/
-|           `-- AssinadorAppTest.java
-|-- assinatura/               # CLI Python (assinatura)
-|   |-- assinatura.py
-|   |-- test_assinatura.py
-|   `-- requirements.txt
-|-- simulador/                # CLI Python (simulador)
-|   |-- simulador.py
-|   |-- test_simulador.py
-|   `-- requirements.txt
-|-- diagramas/                # Diagramas C4 em PlantUML
-|   |-- contexto.puml
-|   `-- conteineres.puml
+|-- .github/workflows/
+|   |-- build.yml       # testes + cross-compile em push/PR
+|   `-- release.yml     # tags v* -> cross-compile, Cosign, GitHub Release
+|-- cmd/
+|   |-- assinatura/     # binario "assinatura" (Go)
+|   `-- simulador/      # binario "simulador" (Go)
+|-- internal/
+|   |-- cli/            # formatadores de saida
+|   |-- invoker/        # invocacao local/HTTP do assinador.jar
+|   |-- jdk/            # localizacao e provisionamento do JRE
+|   `-- release/        # leitura de release.json e download
+|-- assinador/          # projeto Java do assinador.jar (Maven)
+|-- simuladorjar/       # projeto Java do simulador.jar (Maven)
+|-- diagramas/          # PlantUML (C4)
 |-- docs/
-|   `-- planejamento.md
+|-- release.json        # manifesto de artefatos (jar + JRE)
+|-- go.mod
 |-- especificacao.md
 |-- design.md
-|-- geraimagens.bat           # Gera SVGs dos diagramas (Windows)
-|-- geraimagens.sh            # Gera SVGs dos diagramas (Linux/Mac)
 |-- LICENSE
 `-- README.md
 ```
 
+## Plataformas suportadas
+
+Os binarios sao construidos de forma nativa para as tres plataformas-alvo
+da disciplina (DT-03):
+
+| Plataforma   | Arquitetura | Artefatos                                                                 |
+|--------------|-------------|---------------------------------------------------------------------------|
+| Windows      | amd64       | `assinatura-<versao>-windows-amd64.exe`, `simulador-<versao>-windows-amd64.exe` |
+| Linux        | amd64       | `assinatura-<versao>-linux-amd64`, `simulador-<versao>-linux-amd64`             |
+| macOS        | amd64       | `assinatura-<versao>-darwin-amd64`, `simulador-<versao>-darwin-amd64`           |
+
+Cada release publica tambem `<artefato>.sig` e `<artefato>.pem` para
+verificacao com `cosign verify-blob` (secao 9 da especificacao).
+
 ## Pre-requisitos
 
-- Java: JDK 17 ou superior
-- Maven: 3.8 ou superior
-- Python: 3.10 ou superior
+- Para uso dos binarios pre-compilados: nenhum. O CLI baixa o JRE e o
+  `simulador.jar` automaticamente quando ausentes (US-03, US-04).
+- Para compilar localmente: Go 1.21+ e Maven 3.8+ com JDK 17+.
 
-## Compilacao e Instalacao
-
-### 1. Compilar o Assinador (Java)
+## Compilacao local
 
 ```bash
-cd assinador
-mvn clean package
+# CLIs Go
+go build -o bin/assinatura ./cmd/assinatura
+go build -o bin/simulador  ./cmd/simulador
+
+# JAR assinador
+cd assinador && mvn package -DskipTests
+
+# JAR simulador
+cd simuladorjar && mvn package -DskipTests
 ```
 
-Isso gera o arquivo `assinador/target/assinador-1.0.0.jar`.
-
-### 2. Dependencias do CLI (Python)
-
-O CLI usa a biblioteca padrao do Python. Para ferramentas de teste opcionais:
+## Uso - CLI `assinatura`
 
 ```bash
-cd assinatura
-pip install -r requirements.txt
+# Criar assinatura digital (simulacao)
+assinatura criar --documento SGVsbG8= --certificado cert-001
+
+# Validar uma assinatura
+assinatura validar --documento SGVsbG8= --assinatura <assinatura>
+
+# Forcar invocacao local em vez do modo servidor (cold start)
+assinatura --modo local criar --documento SGVsbG8= --certificado cert-001
+
+# Servidor HTTP
+assinatura servidor iniciar
+assinatura servidor iniciar --parar-apos-minutos 30
+assinatura servidor status
+assinatura servidor parar
+
+# Versao do CLI (injetada via -ldflags em release)
+assinatura version
 ```
 
-## Uso
+Estado do servidor: `~/.hubsaude/assinador-server.json` (PID, porta, JAR, inicio).
 
-### Criar assinatura digital (simulacao)
+## Uso - CLI `simulador`
 
 ```bash
-python assinatura/assinatura.py criar --documento SGVsbG8= --certificado cert-001
+simulador iniciar              # baixa simulador.jar e JRE se necessario
+simulador status
+simulador parar
+
+# Forcar atualizacao do simulador.jar via release.json
+simulador atualizar
 ```
 
-### Validar assinatura digital (simulacao)
+## Verificacao de artefatos (Cosign)
 
 ```bash
-python assinatura/assinatura.py validar --documento SGVsbG8= --assinatura <assinatura-gerada-para-este-documento>
-```
-
-Por padrao, o CLI usa o modo servidor: se o `assinador.jar` nao estiver em execucao na porta 8080, ele tenta inicia-lo automaticamente.
-
-### Usar invocacao local direta
-
-```bash
-python assinatura/assinatura.py --modo local criar --documento SGVsbG8= --certificado cert-001
-```
-
-### Gerenciar o servidor do Assinador
-
-```bash
-python assinatura/assinatura.py servidor iniciar
-python assinatura/assinatura.py servidor status
-python assinatura/assinatura.py servidor parar
-```
-
-Para usar outra porta:
-
-```bash
-python assinatura/assinatura.py --porta 9090 servidor iniciar
-```
-
-Para encerrar automaticamente o servidor apos um periodo sem requisicoes:
-
-```bash
-python assinatura/assinatura.py servidor iniciar --parar-apos-minutos 30
-```
-
-Ao iniciar o servidor pela CLI, o Runner registra PID, porta, caminho do JAR e horario de inicio em:
-
-```text
-~/.hubsaude/assinador-server.json
-```
-
-### Verificar versao do CLI
-
-```bash
-python assinatura/assinatura.py --version
-```
-
-### Especificar caminho do JAR
-
-```bash
-python assinatura/assinatura.py --jar /caminho/para/assinador.jar criar --documento SGVsbG8= --certificado cert-001
-```
-
-## Exemplo de Saida
-
-```text
-============================================================
-  [OK] Status: SUCESSO
-------------------------------------------------------------
-  Mensagem:    Assinatura digital criada com sucesso (simulacao).
-  Algoritmo:   SHA256withRSA
-  Certificado: cert-001
-  Assinatura:  YWJjZGVmZzEyMzQ1Njc4OTBhYmNkZWZn...
-  Timestamp:   2026-03-17T20:45:00Z
-============================================================
+cosign verify-blob \
+  --certificate-identity-regexp 'https://github.com/kyriosdata/runner/.github/workflows/release.yml@.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate assinatura-1.0.0-linux-amd64.pem \
+  --signature   assinatura-1.0.0-linux-amd64.sig \
+  assinatura-1.0.0-linux-amd64
 ```
 
 ## Testes
 
-### Testes Java (assinador)
-
 ```bash
-cd assinador
-mvn test
+go test ./...                        # Go: CLIs + pacotes internos
+cd assinador && mvn test             # Java: assinador.jar
+cd simuladorjar && mvn test          # Java: simulador.jar
 ```
-
-### Testes Python (CLI assinatura)
-
-```bash
-cd assinatura
-python -m unittest test_assinatura.py -v
-```
-
-### Testes Python (CLI simulador)
-
-```bash
-cd simulador
-python -m unittest test_simulador.py -v
-```
-
-## CLI simulador
-
-Comandos basicos para gerenciar o ciclo de vida do `simulador.jar`:
-
-```bash
-python simulador/simulador.py iniciar --jar /caminho/para/simulador.jar
-python simulador/simulador.py status
-python simulador/simulador.py parar
-```
-
-A porta padrao e 8443. Estado local (PID/porta/jar) e gravado em `~/.hubsaude/simulador-server.json`.
 
 ## Diagramas (C4)
 
-Os diagramas estao em [diagramas/](./diagramas/) (PlantUML). Para gerar os SVGs (requer Java):
+Para gerar os SVGs a partir dos `.puml`:
 
 ```bash
-# Linux / macOS
-./geraimagens.sh
-
-# Windows
-geraimagens.bat
+./geraimagens.sh        # Linux/macOS
+geraimagens.bat         # Windows
 ```
 
-Os SVGs sao gravados em `diagramas/imagens/` e referenciados em [design.md](./design.md).
+## Releases multiplataforma
 
-## Arquitetura
-
-O sistema segue o modelo C4 de documentacao arquitetural:
-
-- CLI `assinatura` (Python): recebe comandos do usuario, invoca o `assinador.jar` via `subprocess` e formata a saida.
-- `assinatura` tambem pode usar o `assinador.jar` em modo servidor HTTP para evitar reinicializacao da JVM a cada chamada.
-- `assinador.jar` (Java): valida parametros rigorosamente, simula criacao/validacao de assinaturas digitais e retorna JSON.
-
-### Fluxo
-
-```text
-Usuario -> assinatura (Python CLI) -> assinador.jar (Java) -> assinatura -> Usuario
-```
+1. Crie uma tag `v*` (ex.: `git tag v1.0.0 && git push origin v1.0.0`).
+2. O workflow `release.yml` executa testes em 3 plataformas, faz
+   cross-compilation, assina os artefatos com Cosign e publica no
+   GitHub Releases junto com `checksums.txt` e `release.json`.
+3. Usuarios podem baixar o binario nativo para sua plataforma e validar
+   a autenticidade via `cosign verify-blob`.

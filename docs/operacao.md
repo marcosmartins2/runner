@@ -1,22 +1,25 @@
 # Operacao do Assinador em modo servidor
 
 Este documento descreve como operar o `assinador.jar` em modo
-servidor HTTP usando o CLI `assinatura`. Cobre os ciclos de
+servidor HTTP usando o CLI nativo `assinatura`. Cobre os ciclos de
 inicializacao, consulta, encerramento manual e encerramento
 programado por inatividade.
 
 ## 1. Pre-requisitos
 
-- `assinador-1.0.0.jar` empacotado em `assinador/target/`
-  (gerado por `mvn package` no diretorio `assinador/`).
-- Java 17+ disponivel via `JAVA_HOME` ou no `PATH`.
+- `assinador.jar` baixado da release ou empacotado em
+  `assinador/target/` (gerado por `mvn package` no diretorio
+  `assinador/`).
+- Java 17+ disponivel via `JAVA_HOME` ou no `PATH`. Quando ausente,
+  o CLI `assinatura provisionar-jdk` baixa um JRE Temurin para
+  `~/.hubsaude/jre/`.
 
 ## 2. Ciclo de vida pelo CLI
 
 ### 2.1. Iniciar o servidor
 
 ```bash
-python assinatura/assinatura.py servidor iniciar
+assinatura servidor iniciar
 ```
 
 Ao iniciar, o CLI:
@@ -31,13 +34,13 @@ Ao iniciar, o CLI:
 Para usar uma porta diferente:
 
 ```bash
-python assinatura/assinatura.py --porta 9090 servidor iniciar
+assinatura servidor iniciar --porta 9090
 ```
 
 ### 2.2. Consultar o status
 
 ```bash
-python assinatura/assinatura.py servidor status
+assinatura servidor status
 ```
 
 A saida exibe o resultado de `/api/info` e, quando ha registro
@@ -47,7 +50,7 @@ local, mostra tambem PID e porta gravados em
 ### 2.3. Parar o servidor
 
 ```bash
-python assinatura/assinatura.py servidor parar
+assinatura servidor parar
 ```
 
 O CLI envia `POST /shutdown` e, em seguida, remove o arquivo de
@@ -55,12 +58,11 @@ estado local.
 
 ## 3. Encerramento programado por inatividade
 
-A partir desta iteracao, o servidor pode encerrar automaticamente
-apos um intervalo sem requisicoes. Use `--parar-apos-minutos` ao
-inicia-lo:
+O servidor pode encerrar automaticamente apos um intervalo sem
+requisicoes. Use `--parar-apos-minutos` ao inicia-lo:
 
 ```bash
-python assinatura/assinatura.py servidor iniciar --parar-apos-minutos 30
+assinatura servidor iniciar --parar-apos-minutos 30
 ```
 
 Com a configuracao acima, o `assinador.jar` encerra apos 30
@@ -79,7 +81,7 @@ Os comandos `criar` e `validar` selecionam automaticamente o modo
 servidor:
 
 ```bash
-python assinatura/assinatura.py criar --documento SGVsbG8= --certificado cert-001
+assinatura criar --documento SGVsbG8= --certificado cert-001
 ```
 
 Se o servidor nao estiver em execucao, ele e iniciado sob demanda
@@ -88,7 +90,7 @@ subsequentes. Para forcar invocacao direta (cold start), use
 `--modo local`:
 
 ```bash
-python assinatura/assinatura.py --modo local criar --documento SGVsbG8= --certificado cert-001
+assinatura --modo local criar --documento SGVsbG8= --certificado cert-001
 ```
 
 ## 5. Diagnostico
@@ -96,8 +98,8 @@ python assinatura/assinatura.py --modo local criar --documento SGVsbG8= --certif
 | Sintoma | Verificacao | Acao |
 |---|---|---|
 | `Assinador HTTP nao respondeu na porta N` | porta ocupada por outro processo, ou JVM lenta para subir | escolher outra porta via `--porta` ou aguardar e tentar novamente |
-| `Java nao encontrado no sistema` | `JAVA_HOME` nao definido e `java` ausente do `PATH` | instalar JDK 17+ ou exportar `JAVA_HOME` |
-| `Assinador nao encontrado em ...` | `assinador.jar` nao foi empacotado | rodar `mvn package` em `assinador/` |
+| `java nao encontrado: configure JAVA_HOME ou execute 'assinatura provisionar-jdk'` | `JAVA_HOME` nao definido e `java` ausente do `PATH` | rodar `assinatura provisionar-jdk` ou instalar JDK 17+ manualmente |
+| `assinador.jar nao encontrado em ...` | binario ausente | passar `--jar PATH` ou copiar o jar para `~/.hubsaude/assinador.jar` |
 | Status mostra dados antigos apos kill manual | arquivo `~/.hubsaude/assinador-server.json` ficou orfao | apagar o arquivo ou rodar `servidor iniciar` novamente para sobrescrever |
 
 ## 6. Arquivos de estado
@@ -108,8 +110,8 @@ O CLI grava em `~/.hubsaude/assinador-server.json`:
 {
   "pid": 12345,
   "porta": 8080,
-  "jar": "/caminho/absoluto/para/assinador-1.0.0.jar",
-  "iniciadoEm": "2026-05-12T22:00:00-0300"
+  "jar": "/caminho/absoluto/para/assinador.jar",
+  "iniciadoEm": "2026-05-26T22:00:00Z"
 }
 ```
 
