@@ -1,6 +1,0 @@
-# Dependências do CLI assinatura
-# O CLI usa apenas a biblioteca padrão do Python (stdlib).
-# Listamos aqui apenas dependências de desenvolvimento/teste.
-
-# Testes
-pytest>=7.0.0
