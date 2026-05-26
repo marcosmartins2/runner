@@ -29,24 +29,28 @@ public class RespostaAssinatura {
     @JsonProperty("algoritmo")
     private final String algoritmo;
 
-    /**
-     * Construtor completo para criação da resposta.
-     *
-     * @param status      status da operação ("sucesso" ou "falha")
-     * @param mensagem    mensagem descritiva do resultado
-     * @param assinatura  assinatura digital em Base64 (pode ser null para validação)
-     * @param timestamp   momento da operação em formato ISO-8601
-     * @param certificado identificador do certificado utilizado (pode ser null)
-     * @param algoritmo   algoritmo de assinatura utilizado
-     */
+    @JsonProperty("pkcs11Provider")
+    private final String pkcs11Provider;
+
     public RespostaAssinatura(String status, String mensagem, String assinatura,
                                String timestamp, String certificado, String algoritmo) {
+        this(status, mensagem, assinatura, timestamp, certificado, algoritmo, null);
+    }
+
+    public RespostaAssinatura(String status, String mensagem, String assinatura,
+                               String timestamp, String certificado, String algoritmo,
+                               String pkcs11Provider) {
         this.status = status;
         this.mensagem = mensagem;
         this.assinatura = assinatura;
         this.timestamp = timestamp;
         this.certificado = certificado;
         this.algoritmo = algoritmo;
+        this.pkcs11Provider = pkcs11Provider;
+    }
+
+    public String getPkcs11Provider() {
+        return pkcs11Provider;
     }
 
     public String getStatus() {
