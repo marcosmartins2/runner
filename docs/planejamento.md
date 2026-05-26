@@ -1,195 +1,77 @@
 # Planejamento de construcao - runner
 
-## 1. Base consultada em 2026-04-07
+## 1. Status atual (2026-05)
 
-Este planejamento foi produzido a partir de tres referencias:
+Apos a observacao do professor no [issue #1](https://github.com/kyriosdata/runner/issues/1)
+sobre a necessidade de versoes nativas em 3 plataformas, o repositorio
+foi reorganizado para seguir o plano oficial:
 
-- solicitacao de atualizacao do repositorio, com foco em consultar o conteudo atual do portal e acrescentar o planejamento ao projeto;
-- repositorio oficial `kyriosdata/runner`, cujo `README.md` informa que, desde 2026-03-18, o foco passou a ser o planejamento da construcao;
-- documentos `docs/planejamento.md` e `docs/plano-revisitado-v2.md` do projeto oficial, consultados na branch `main`, com release mais recente `v0.0.6` publicada em 2026-04-01.
+- CLIs `assinatura` e `simulador` reescritos em Go, gerando binarios
+  nativos para `windows/amd64`, `linux/amd64` e `darwin/amd64`;
+- aplicacao `assinador.jar` mantida em Java 17 (Maven), com suporte
+  opcional a dispositivos PKCS#11 (token/smart card);
+- aplicacao `simulador.jar` adicionada como projeto Java independente
+  (`simuladorjar/`), expondo `/api/info` e `/shutdown`;
+- pipeline CI/CD com testes em 3 plataformas, cross-compilation, geracao
+  de `checksums.txt` e assinatura keyless via Cosign/Sigstore.
 
-Referencias:
+## 2. Decisoes tecnicas
 
-- <https://github.com/kyriosdata/runner>
-- <https://github.com/kyriosdata/runner/blob/main/docs/planejamento.md>
-- <https://github.com/kyriosdata/runner/blob/main/docs/plano-revisitado-v2.md>
-
-## 2. Diretrizes consideradas
-
-Da documentacao mais recente do projeto de referencia, ficam claras quatro diretrizes para o repositorio:
-
-1. registrar explicitamente a ambientacao adotada;
-2. assumir um processo iterativo e incremental;
-3. planejar a construcao em etapas que contemplem design detalhado, implementacao, testes de unidade, revisao e refatoracao;
-4. manter rastreabilidade entre o que ja existe no projeto e o que ainda falta para atender a especificacao.
-
-## 3. Diagnostico do estado atual do repositorio
-
-### O que ja existe
-
-- CLI `assinatura` em Python com comandos `criar` e `validar`, opcao `--version` e suporte a `--jar`;
-- aplicacao `assinador` em Java com validacao de parametros, simulacao de assinatura e resposta JSON;
-- testes unitarios em Java para validacao de parametros e servico de assinatura;
-- testes do CLI em Python escritos com `unittest`.
-
-### O que motivou esta atualizacao
-
-- o repositorio nao tinha um documento de planejamento proprio;
-- a ambientacao tecnica nao estava registrada;
-- artefatos gerados (`target/`, `__pycache__/`) estavam sendo versionados, o que conflita com um fluxo minimo de construcao e revisao.
-
-### Lacunas em relacao ao plano oficial
-
-| Item | Situacao no repositorio atual | Observacao |
+| ID | Decisao | Valor |
 |---|---|---|
-| US-02.1, US-02.2 e parte de US-02.3 | parcialmente atendidos | o `assinador` local ja simula criacao/validacao e valida parametros |
-| US-01.2, US-01.3 e US-01.4 | parcialmente atendidos | o CLI local ja parseia comandos, invoca o jar e formata a saida |
-| US-04.1 | nao iniciado | nao ha provisionamento automatico do JDK |
-| US-01.5 a US-01.9 | parcialmente atendido | ha modo servidor HTTP para o assinador, start/status/stop e uso automatico pelo CLI; ainda falta parada programada por inatividade |
-| US-03.1 a US-03.4 | nao iniciado | nao ha CLI `simulador` nem download dinamico do `simulador.jar` |
-| US-05.1 a US-05.3 | nao iniciado | nao ha CI/CD, release, checksum ou Cosign |
+| DT-01 | Modulo Go | `github.com/kyriosdata/runner` |
+| DT-02 | Branch principal | `main` |
+| DT-03 | Plataformas-alvo | `windows/amd64`, `linux/amd64`, `darwin/amd64` |
+| DT-04 | Convencao de nome dos artefatos | `<binario>-<tag>-<os>-<arch>[.exe]` |
+| DT-05 | Checksums | `sha256sum` consolidado em `checksums.txt` |
+| DT-06 | Layout | `cmd/`, `internal/`, `assinador/`, `simuladorjar/` |
+| DT-07 | Distribuicao | GitHub Releases via tag `v*` |
+| DT-08 | Assinatura | Cosign keyless (OIDC) com `<artefato>.sig` e `<artefato>.pem` |
 
-## 4. Ambientacao adotada
+## 3. Mapeamento US -> implementacao
 
-### Decisoes tecnicas
+| US | Onde foi atendido |
+|---|---|
+| US-01 | `cmd/assinatura`, `internal/invoker` (CLI local e HTTP) |
+| US-02 | `assinador/` (Java), `ValidadorParametros`, `AssinaturaService`, suporte `--pkcs11` |
+| US-03 | `cmd/simulador`, `internal/release`, `simuladorjar/` |
+| US-04 | `internal/jdk` (deteccao + download Temurin) |
+| US-05 | `.github/workflows/release.yml`, Cosign, cross-compile |
 
-| ID | Decisao | Justificativa |
-|---|---|---|
-| DT-01 | Manter o CLI `assinatura` em Python na proxima iteracao | ja existe fluxo local funcional; a prioridade imediata e consolidar valor entregue e testes |
-| DT-02 | Manter o `assinador` em Java 17 com Maven | o modulo ja esta operacional e testado |
-| DT-03 | Adotar processo iterativo e incremental | alinhado a documentacao de referencia |
-| DT-04 | Versionar somente codigo-fonte e documentacao | reduz ruido de build e melhora revisao |
-| DT-05 | Usar `main` como branch principal e branches curtas por funcionalidade | alinhado a um fluxo simples de integracao e revisao |
+## 4. Iteracoes concluidas
 
-Inferencia local: o plano oficial de referencia usa Go para os CLIs por facilitar distribuicao multiplataforma. Neste repositorio, a decisao para a proxima iteracao e manter Python e reavaliar migracao apenas se a entrega de US-05 se mostrar inviavel com a base atual.
+- **Iteracao 1 (consolidacao do modo local).** Validacao e simulacao
+  do assinador em Java; estrutura testavel.
+- **Iteracao 2 (modo servidor).** Endpoints HTTP, start/stop/status,
+  parada programada por inatividade.
+- **Iteracao 3 (CLI nativa).** Migracao das CLIs para Go, gerando
+  binarios para 3 plataformas e abrindo caminho para distribuicao via
+  GitHub Releases. Atende explicitamente ao issue #1.
+- **Iteracao 4 (distribuicao).** Workflow `release.yml`, Cosign,
+  checksums, atualizacao de `release.json`.
 
-### Ambiente minimo de desenvolvimento
+## 5. Definition of Done atendida
 
-- Python 3.10+
-- Java 17+
-- Maven 3.8+
+- [x] `go build ./...` produz `assinatura` e `simulador` para Windows,
+      Linux e macOS;
+- [x] `go test ./...` passa nas tres plataformas (matriz no
+      `build.yml`);
+- [x] `mvn test` passa em `assinador/` e `simuladorjar/`;
+- [x] Pipeline CI compila e testa todo o conjunto em push/PR para main;
+- [x] Tags `v*` publicam release com binarios, JARs, `checksums.txt`,
+      `release.json` e arquivos `.sig`/`.pem` por artefato;
+- [x] `cosign verify-blob` reconhece os artefatos como autenticos.
 
-### Comandos de trabalho
+## 6. Comandos de trabalho
 
 ```bash
-cd assinador
-mvn test
+go test ./...                          # testes Go
+cd assinador && mvn test               # testes do assinador.jar
+cd simuladorjar && mvn test            # testes do simulador.jar
+go build -o bin/assinatura ./cmd/assinatura
+go build -o bin/simulador  ./cmd/simulador
 ```
 
-```bash
-cd assinatura
-python -m unittest test_assinatura.py -v
-```
+## 7. Operacao do CLI em modo servidor
 
-```bash
-cd assinador
-mvn package
-```
-
-## 5. Modelo de construcao adotado
-
-Cada iteracao deve seguir este ciclo:
-
-1. design detalhado do incremento;
-2. implementacao;
-3. criacao ou ajuste de testes de unidade/integracao;
-4. revisao;
-5. refatoracao.
-
-## 6. Planejamento das proximas iteracoes
-
-### Iteracao 1 - consolidacao do modo local
-
-Objetivo: deixar o fluxo local ja existente coerente com a documentacao do projeto, reproduzivel e rastreavel.
-
-Historias foco:
-
-- US-02.1
-- US-02.2
-- US-02.3
-- US-01.2
-- US-01.3
-- US-01.4
-
-Tarefas operacionais:
-
-- [x] registrar a ambientacao e o planejamento no repositorio;
-- [x] parar de versionar artefatos gerados e registrar `.gitignore`;
-- [x] revisar o CLI para incluir teste de integracao `assinatura -> assinador.jar`;
-- [ ] revisar mensagens de ajuda/erro para cobrir os cenarios principais do fluxo local;
-- [ ] padronizar a execucao dos testes do CLI em ambiente controlado.
-
-Definition of Done da iteracao:
-
-- `mvn test` passa no modulo `assinador`;
-- testes do CLI executam sem depender de arquivos gerados previamente;
-- o `README` aponta para o planejamento;
-- o repositorio nao depende de `target/` ou `__pycache__/` versionados.
-
-### Iteracao 2 - automacao e distribuicao
-
-Objetivo: preparar o projeto para validacao continua e distribuicao.
-
-Historias foco:
-
-- US-04.1
-- US-05.1
-- US-05.2
-- US-05.3
-
-Tarefas operacionais:
-
-- [ ] definir estrategia de empacotamento multiplataforma do CLI atual;
-- [ ] criar pipeline para testes de Java e Python;
-- [ ] gerar artefatos versionados para release;
-- [ ] publicar checksums SHA-256;
-- [ ] investigar automacao de assinatura com Cosign.
-
-Risco principal:
-
-- se o empacotamento do CLI em Python introduzir friccao excessiva para releases multiplataforma, a migracao para Go deve ser reaberta antes do fim desta iteracao.
-
-### Iteracao 3 - modo servidor do assinador
-
-Objetivo: reduzir latencia e permitir gerenciamento do processo do `assinador.jar`.
-
-Historias foco:
-
-- US-02.4
-- US-01.5
-- US-01.6
-- US-01.7
-- US-01.8
-- US-01.9
-
-Tarefas operacionais:
-
-- [x] definir endpoints HTTP do `assinador`;
-- [x] implementar inicializacao em background;
-- [x] registrar PID/porta em area de trabalho do usuario;
-- [x] criar comandos de start/stop/status ou equivalente no CLI;
-- [x] criar selecao explicita entre modo servidor e modo local.
-- [x] implementar interrupcao programada por inatividade.
-
-### Iteracao 4 - simulador do HubSaude
-
-Objetivo: completar o escopo de gerenciamento do `simulador.jar`.
-
-Historias foco:
-
-- US-03.1
-- US-03.2
-- US-03.3
-- US-03.4
-
-Tarefas operacionais:
-
-- [ ] definir a interface do CLI `simulador`;
-- [ ] documentar portas, startup e encerramento do simulador;
-- [ ] baixar dinamicamente a versao mais recente do `simulador.jar`;
-- [ ] suportar `--source` para fonte alternativa;
-- [ ] registrar status local e checagem de integridade do download.
-
-## 7. Resultado desta atualizacao no repositorio
-
-Esta atualizacao acrescenta o planejamento ao repositorio, registra a ambientacao adotada e deixa de tratar artefatos gerados como parte do codigo-fonte.
+Detalhes em [operacao.md](./operacao.md).
