@@ -1,0 +1,31 @@
+# Normalizacao de fim de linha e encoding (criterio D de docs/criterios.md).
+# Garante builds reproduziveis entre Windows e Linux/macOS.
+
+# Por padrao, deixa o Git decidir texto vs binario e normaliza para LF no repo.
+* text=auto eol=lf
+
+# Codigo-fonte e configuracao: sempre LF.
+*.go     text eol=lf
+*.java   text eol=lf
+*.xml    text eol=lf
+*.json   text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.md     text eol=lf
+*.sh     text eol=lf
+*.puml   text eol=lf
+go.mod   text eol=lf
+go.sum   text eol=lf
+LICENSE  text eol=lf
+
+# Scripts especificos do Windows precisam de CRLF.
+*.bat    text eol=crlf
+*.cmd    text eol=crlf
+
+# Artefatos binarios: nunca normalizar.
+*.jar    binary
+*.png    binary
+*.svg    binary
+*.zip    binary
+*.gz     binary
+*.exe    binary

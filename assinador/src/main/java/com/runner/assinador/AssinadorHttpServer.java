@@ -22,10 +22,10 @@ public class AssinadorHttpServer {
 
     private final int porta;
     private final int timeoutInatividadeMinutos;
+    private final MonitorInatividade monitor;
     private HttpServer servidor;
     private ExecutorService executor;
-    private ScheduledExecutorService monitorInatividade;
-    private volatile long ultimaInteracaoMillis;
+    private ScheduledExecutorService agendadorInatividade;
 
     public AssinadorHttpServer(int porta) {
         this(porta, 0);
@@ -34,7 +34,7 @@ public class AssinadorHttpServer {
     public AssinadorHttpServer(int porta, int timeoutInatividadeMinutos) {
         this.porta = porta;
         this.timeoutInatividadeMinutos = timeoutInatividadeMinutos;
-        this.ultimaInteracaoMillis = System.currentTimeMillis();
+        this.monitor = new MonitorInatividade(timeoutInatividadeMinutos, System.currentTimeMillis());
     }
 
     public void iniciar() throws IOException {
@@ -133,15 +133,13 @@ public class AssinadorHttpServer {
     }
 
     private void iniciarMonitorInatividade() {
-        if (timeoutInatividadeMinutos <= 0) {
+        if (!monitor.ativo()) {
             return;
         }
 
-        monitorInatividade = Executors.newSingleThreadScheduledExecutor();
-        long timeoutMillis = TimeUnit.MINUTES.toMillis(timeoutInatividadeMinutos);
-        monitorInatividade.scheduleAtFixedRate(() -> {
-            long inativoPor = System.currentTimeMillis() - ultimaInteracaoMillis;
-            if (inativoPor >= timeoutMillis) {
+        agendadorInatividade = Executors.newSingleThreadScheduledExecutor();
+        agendadorInatividade.scheduleAtFixedRate(() -> {
+            if (monitor.deveEncerrar(System.currentTimeMillis())) {
                 System.out.println("Assinador HTTP encerrado por inatividade.");
                 encerrar();
             }
@@ -149,7 +147,7 @@ public class AssinadorHttpServer {
     }
 
     private void registrarInteracao() {
-        ultimaInteracaoMillis = System.currentTimeMillis();
+        monitor.registrarInteracao(System.currentTimeMillis());
     }
 
     private void encerrar() {
@@ -159,8 +157,8 @@ public class AssinadorHttpServer {
         if (executor != null) {
             executor.shutdownNow();
         }
-        if (monitorInatividade != null) {
-            monitorInatividade.shutdownNow();
+        if (agendadorInatividade != null) {
+            agendadorInatividade.shutdownNow();
         }
     }
 

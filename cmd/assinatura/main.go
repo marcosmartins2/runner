@@ -14,11 +14,16 @@ import (
 	"github.com/kyriosdata/runner/internal/cli"
 	"github.com/kyriosdata/runner/internal/invoker"
 	"github.com/kyriosdata/runner/internal/jdk"
+	"github.com/kyriosdata/runner/internal/logging"
 	"github.com/kyriosdata/runner/internal/release"
 )
 
-// version e sobrescrita em release.yml via "-ldflags -X main.version=<tag>".
-var version = "dev"
+// version e commit sao sobrescritos em release.yml via
+// "-ldflags -X main.version=<tag> -X main.commit=<sha-curto>".
+var (
+	version = "dev"
+	commit  = "none"
+)
 
 const portaAssinadorPadrao = invoker.PortaPadrao
 
@@ -29,6 +34,7 @@ func main() {
 
 // executar e a versao testavel do entrypoint.
 func executar(args []string, stdout, stderr io.Writer) int {
+	args = configurarObservabilidade(args, stderr)
 	if len(args) == 0 {
 		imprimirUso(stderr)
 		return 1
@@ -36,7 +42,7 @@ func executar(args []string, stdout, stderr io.Writer) int {
 
 	switch args[0] {
 	case "version", "--version", "-v":
-		fmt.Fprintf(stdout, "assinatura %s\n", version)
+		fmt.Fprintf(stdout, "assinatura %s (%s)\n", version, commit)
 		return 0
 	case "-h", "--help", "help":
 		imprimirUso(stdout)
@@ -284,8 +290,71 @@ func resolverJar(arg string) (string, error) {
 			return abs, nil
 		}
 	}
-	return "", fmt.Errorf("assinador.jar nao encontrado. Forneca --jar <path>, configure ASSINADOR_JAR, " +
-		"ou copie o jar para ~/.hubsaude/assinador.jar")
+
+	// Estrategia hibrida: nao havendo jar local (dev/offline), baixa o artefato
+	// real publicado pelo upstream (hubsaude-validador-api) com verificacao de
+	// integridade. Ver docs/adr/0004-estrategia-hibrida-artefatos.md.
+	caminho, errDownload := baixarAssinadorJar()
+	if errDownload == nil {
+		return caminho, nil
+	}
+	logging.Debug("falha ao baixar assinador do upstream", "erro", errDownload)
+
+	return "", fmt.Errorf("assinador.jar nao encontrado localmente nem no upstream. " +
+		"Forneca --jar <path>, configure ASSINADOR_JAR, ou copie o jar para ~/.hubsaude/assinador.jar")
+}
+
+// baixarAssinadorJar obtem o assinador.jar real a partir do manifesto upstream
+// (campo "validador"), reaproveitando a copia local quando a versao ja coincide.
+func baixarAssinadorJar() (string, error) {
+	manifesto, err := release.BaixarManifesto("")
+	if err != nil {
+		return "", err
+	}
+	art, ok := manifesto.ArtefatoAssinador()
+	if !ok || art.URL == "" {
+		return "", fmt.Errorf("manifesto nao contem artefato do assinador (validador)")
+	}
+
+	dir, err := jdk.DiretorioHubSaude()
+	if err != nil {
+		return "", err
+	}
+	destino := filepath.Join(dir, "assinador.jar")
+
+	if _, errStat := os.Stat(destino); errStat == nil && release.VersaoInstalada(destino) == art.Version {
+		logging.Debug("assinador.jar local ja na versao do upstream", "versao", art.Version)
+		return destino, nil
+	}
+
+	logging.Info("baixando assinador (validador) do upstream",
+		"versao", art.Version, "tag", art.Tag, "url", art.URL)
+	if err := release.BaixarArquivoVerificado(art.URL, destino, art.SHA256); err != nil {
+		return "", err
+	}
+	if err := release.GravarVersao(destino, art.Version); err != nil {
+		logging.Warn("nao foi possivel registrar a versao baixada", "erro", err)
+	}
+	return destino, nil
+}
+
+// configurarObservabilidade interpreta as flags globais --verbose / --quiet em
+// qualquer posicao, configura o logger e devolve os argumentos restantes.
+func configurarObservabilidade(args []string, stderr io.Writer) []string {
+	nivel := logging.Normal
+	restantes := make([]string, 0, len(args))
+	for _, a := range args {
+		switch a {
+		case "--verbose":
+			nivel = logging.Verbose
+		case "--quiet":
+			nivel = logging.Quiet
+		default:
+			restantes = append(restantes, a)
+		}
+	}
+	logging.Configurar(nivel, stderr)
+	return restantes
 }
 
 func caminhoEstadoServidor() (string, error) {
@@ -307,10 +376,15 @@ func imprimirUso(saida io.Writer) {
 		"  assinatura servidor <iniciar|parar|status> [--porta N] [--jar PATH] [--parar-apos-minutos N]",
 		"  assinatura provisionar-jdk",
 		"",
+		"Flags globais:",
+		"  --verbose   diagnostico detalhado (logs de depuracao em stderr)",
+		"  --quiet     suprime logs informativos (mantem apenas erros)",
+		"",
 		"Exemplos:",
 		"  assinatura criar --documento SGVsbG8= --certificado cert-001",
 		"  assinatura --modo local validar --documento SGVsbG8= --assinatura dGVzdA==",
 		"  assinatura servidor iniciar --parar-apos-minutos 30",
+		"  assinatura --verbose criar --documento SGVsbG8= --certificado cert-001",
 	}, "\n")
 	fmt.Fprintln(saida, uso)
 }

@@ -32,14 +32,16 @@
 
 ## 3. Componentes principais
 
-### 3.1. assinatura (CLI Python)
+### 3.1. assinatura (CLI Go)
 
-- Recebe comandos do usuario (`criar`, `validar`, `servidor`)
-- Valida entrada antes de invocar o Assinador
+- Recebe comandos do usuario (`criar`, `validar`, `servidor`, `provisionar-jdk`)
 - Suporta dois modos de invocacao: local (subprocess) e servidor (HTTP)
 - Detecta automaticamente se um servidor ja esta em execucao na porta alvo
+  (health check em `/api/info`)
 - Persiste metadados do servidor em `~/.hubsaude/assinador-server.json`
 - Formata a resposta JSON do Assinador em saida amigavel
+- Logs estruturados (`log/slog`) com `--verbose`/`--quiet`; resultado em stdout,
+  diagnostico em stderr
 
 ### 3.2. assinador.jar (Java)
 
@@ -49,21 +51,28 @@
 - Pode operar como CLI de uma vez ou como servidor HTTP (`AssinadorHttpServer`)
 - Suporta encerramento programado por inatividade
 
-### 3.3. simulador (CLI Python)
+### 3.3. simulador (CLI Go)
 
-- Gerencia o ciclo de vida do `simulador.jar` (start, stop, status)
+- Gerencia o ciclo de vida do `simulador.jar` (start, stop, status, atualizar)
 - Verifica disponibilidade da porta padrao (8443) antes de iniciar
 - Consulta `/api/info` e aciona `/shutdown` do `simulador.jar`
-- (Planejado) Baixa o `simulador.jar` dinamicamente via GitHub Releases
-- (Planejado) Provisiona o JRE via Eclipse Temurin (Adoptium)
+- Baixa o `simulador.jar` dinamicamente via `release.json` (artefato real do
+  upstream), com verificacao de integridade SHA256
+- Provisiona o JRE via Eclipse Temurin (Adoptium) quando ausente
 
 ## 4. Decisoes de design
 
-| ID | Decisao | Justificativa |
-|----|---------|---------------|
-| DD-01 | CLI em Python | Disponivel em todas as plataformas, baixo overhead inicial, biblioteca padrao cobre HTTP/subprocess |
-| DD-02 | Assinador em Java 17 com Maven | Compatibilidade com o ecossistema do HubSaude e com bibliotecas de criptografia |
-| DD-03 | Servidor HTTP minimo (`com.sun.net.httpserver`) | Evita dependencia de framework HTTP pesado, suficiente para escopo de simulacao |
-| DD-04 | Persistir estado em `~/.hubsaude/assinador-server.json` | Permite ao CLI descobrir instancia ja em execucao entre invocacoes |
-| DD-05 | Resposta sempre em JSON | Padronizacao para integracao com CLI/HTTP e testes automatizados |
-| DD-06 | Versionamento SemVer | Compatibilidade com automacao de release e politicas de upgrade dos integradores |
+As decisoes nao-obvias sao registradas como ADRs curtos em
+[`docs/adr/`](docs/adr/). Resumo das decisoes de design:
+
+| ID | Decisao | Justificativa | ADR |
+|----|---------|---------------|-----|
+| DD-01 | CLIs em Go (binarios nativos) | Cross-compile sem runtime no host; stdlib cobre HTTP/subprocess/log | [0001](docs/adr/0001-linguagem-go-para-as-clis.md) |
+| DD-02 | Assinador em Java 17 com Maven | Compatibilidade com o ecossistema do HubSaude | — |
+| DD-03 | Servidor HTTP minimo (`com.sun.net.httpserver`) | Evita framework HTTP pesado, suficiente para o escopo de simulacao | — |
+| DD-04 | Estado em `~/.hubsaude/assinador-server.json` | CLI descobre instancia em execucao entre invocacoes | [0002](docs/adr/0002-porta-padrao-e-descoberta-de-instancia.md) |
+| DD-05 | Resposta sempre em JSON | Padronizacao para integracao CLI/HTTP e testes | — |
+| DD-06 | Versionamento SemVer | Automacao de release e politicas de upgrade | — |
+| DD-07 | Parser de CLI com stdlib `flag` | Escopo pequeno; zero dependencias | [0003](docs/adr/0003-parser-de-cli-com-stdlib-flag.md) |
+| DD-08 | Artefatos reais do upstream + fallback local | Single source of truth (criterio B) | [0004](docs/adr/0004-estrategia-hibrida-artefatos.md) |
+| DD-09 | Integridade SHA256 (runtime) + Cosign (release) | Seguranca da cadeia de suprimentos | [0005](docs/adr/0005-integridade-sha256-e-cosign.md) |

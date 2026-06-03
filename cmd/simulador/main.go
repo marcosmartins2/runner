@@ -23,10 +23,16 @@ import (
 	"github.com/kyriosdata/runner/internal/cli"
 	"github.com/kyriosdata/runner/internal/invoker"
 	"github.com/kyriosdata/runner/internal/jdk"
+	"github.com/kyriosdata/runner/internal/logging"
 	"github.com/kyriosdata/runner/internal/release"
 )
 
-var version = "dev"
+// version e commit sao sobrescritos em release.yml via
+// "-ldflags -X main.version=<tag> -X main.commit=<sha-curto>".
+var (
+	version = "dev"
+	commit  = "none"
+)
 
 const (
 	portaSimuladorPadrao = 8443
@@ -39,13 +45,14 @@ func main() {
 }
 
 func executar(args []string, stdout, stderr io.Writer) int {
+	args = configurarObservabilidade(args, stderr)
 	if len(args) == 0 {
 		imprimirUso(stderr)
 		return 1
 	}
 	switch args[0] {
 	case "version", "--version", "-v":
-		fmt.Fprintf(stdout, "simulador %s\n", version)
+		fmt.Fprintf(stdout, "simulador %s (%s)\n", version, commit)
 		return 0
 	case "-h", "--help", "help":
 		imprimirUso(stdout)
@@ -84,9 +91,9 @@ func rodarIniciar(args []string, stdout, stderr io.Writer) int {
 
 	caminhoJar, err := resolverJar(*jar)
 	if err != nil {
-		// Tentar baixar via release.json
-		fmt.Fprintln(stderr, "simulador.jar nao encontrado; baixando a versao mais recente...")
-		caminhoJar, err = baixarJarMaisRecente(stderr)
+		// Tentar baixar via release.json (artefato real do upstream).
+		logging.Info("simulador.jar nao encontrado localmente; baixando a versao mais recente")
+		caminhoJar, err = baixarJarMaisRecente()
 		if err != nil {
 			fmt.Fprintf(stderr, "[ERRO]: %v\n", err)
 			return 1
@@ -95,8 +102,8 @@ func rodarIniciar(args []string, stdout, stderr io.Writer) int {
 
 	caminhoJava := jdk.LocalizarJava()
 	if caminhoJava == "" {
-		fmt.Fprintln(stderr, "java nao encontrado; provisionando JRE...")
-		caminhoJava, err = provisionarJDK(stderr)
+		logging.Info("java nao encontrado; provisionando JRE Temurin")
+		caminhoJava, err = provisionarJDK()
 		if err != nil {
 			fmt.Fprintf(stderr, "[ERRO]: %v\n", err)
 			return 1
@@ -181,7 +188,7 @@ func rodarStatus(args []string, stdout, stderr io.Writer) int {
 }
 
 func rodarAtualizar(stdout, stderr io.Writer) int {
-	if _, err := baixarJarMaisRecente(stderr); err != nil {
+	if _, err := baixarJarMaisRecente(); err != nil {
 		fmt.Fprintf(stderr, "[ERRO]: %v\n", err)
 		return 1
 	}
@@ -278,7 +285,7 @@ func caminhoSimuladorJar() (string, error) {
 	return filepath.Join(dir, "simulador.jar"), nil
 }
 
-func baixarJarMaisRecente(stderr io.Writer) (string, error) {
+func baixarJarMaisRecente() (string, error) {
 	manifesto, err := release.BaixarManifesto("")
 	if err != nil {
 		return "", err
@@ -288,38 +295,32 @@ func baixarJarMaisRecente(stderr io.Writer) (string, error) {
 		return "", err
 	}
 
-	url := manifesto.Jar.URL
-	versao := manifesto.Jar.Version
-	if manifesto.Sim != nil && manifesto.Sim.URL != "" {
-		url = manifesto.Sim.URL
-		versao = manifesto.Sim.Version
-	}
-	if url == "" {
+	art, ok := manifesto.ArtefatoSimulador()
+	if !ok || art.URL == "" {
 		return "", fmt.Errorf("manifesto nao contem URL do simulador.jar")
 	}
 
-	instalada := release.VersaoInstalada(caminho)
-	if instalada == versao {
-		fmt.Fprintf(stderr, "simulador.jar ja esta na versao %s.\n", versao)
+	if release.VersaoInstalada(caminho) == art.Version {
+		logging.Info("simulador.jar ja esta atualizado", "versao", art.Version)
 		return caminho, nil
 	}
 
-	fmt.Fprintf(stderr, "baixando simulador.jar versao %s...\n", versao)
-	if err := release.BaixarArquivo(url, caminho); err != nil {
+	logging.Info("baixando simulador.jar", "versao", art.Version, "tag", art.Tag, "url", art.URL)
+	if err := release.BaixarArquivoVerificado(art.URL, caminho, art.SHA256); err != nil {
 		return "", err
 	}
-	if err := release.GravarVersao(caminho, versao); err != nil {
-		return "", err
+	if err := release.GravarVersao(caminho, art.Version); err != nil {
+		logging.Warn("nao foi possivel registrar a versao baixada", "erro", err)
 	}
 	return caminho, nil
 }
 
-func provisionarJDK(stderr io.Writer) (string, error) {
+func provisionarJDK() (string, error) {
 	manifesto, err := release.BaixarManifesto("")
 	if err != nil {
 		return "", err
 	}
-	fmt.Fprintln(stderr, "baixando JRE Temurin (~250 MB)...")
+	logging.Info("baixando JRE Temurin (~250 MB) do Adoptium")
 	return jdk.Provisionar(manifesto)
 }
 
@@ -355,6 +356,25 @@ func removerEstadoSimulador() error {
 	return invoker.RemoverEstado(caminho)
 }
 
+// configurarObservabilidade interpreta as flags globais --verbose / --quiet em
+// qualquer posicao, configura o logger e devolve os argumentos restantes.
+func configurarObservabilidade(args []string, stderr io.Writer) []string {
+	nivel := logging.Normal
+	restantes := make([]string, 0, len(args))
+	for _, a := range args {
+		switch a {
+		case "--verbose":
+			nivel = logging.Verbose
+		case "--quiet":
+			nivel = logging.Quiet
+		default:
+			restantes = append(restantes, a)
+		}
+	}
+	logging.Configurar(nivel, stderr)
+	return restantes
+}
+
 func imprimirUso(saida io.Writer) {
 	uso := strings.Join([]string{
 		"simulador - CLI do Sistema Runner para o Simulador HubSaude",
@@ -366,10 +386,14 @@ func imprimirUso(saida io.Writer) {
 		"  simulador status   [--porta N]",
 		"  simulador atualizar    (baixa a ultima versao do simulador.jar via release.json)",
 		"",
+		"Flags globais:",
+		"  --verbose   diagnostico detalhado (logs de depuracao em stderr)",
+		"  --quiet     suprime logs informativos (mantem apenas erros)",
+		"",
 		"Exemplos:",
 		"  simulador iniciar",
-		"  simulador --porta 9443 iniciar --jar /caminho/simulador.jar",
-		"  simulador status",
+		"  simulador iniciar --porta 9443 --jar /caminho/simulador.jar",
+		"  simulador --verbose status",
 	}, "\n")
 	fmt.Fprintln(saida, uso)
 }

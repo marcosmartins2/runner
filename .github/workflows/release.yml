@@ -72,16 +72,18 @@ jobs:
           TAG: ${{ steps.versao.outputs.TAG }}
         run: |
           mkdir -p dist
+          COMMIT="${GITHUB_SHA::7}"
+          LDFLAGS="-X main.version=${TAG} -X main.commit=${COMMIT}"
           for target in linux/amd64 windows/amd64 darwin/amd64; do
             os="${target%/*}"
             arch="${target#*/}"
             ext=""
             if [ "$os" = "windows" ]; then ext=".exe"; fi
             GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 \
-              go build -ldflags "-X main.version=${TAG}" \
+              go build -ldflags "${LDFLAGS}" \
               -o "dist/assinatura-${TAG}-${os}-${arch}${ext}" ./cmd/assinatura
             GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 \
-              go build -ldflags "-X main.version=${TAG}" \
+              go build -ldflags "${LDFLAGS}" \
               -o "dist/simulador-${TAG}-${os}-${arch}${ext}" ./cmd/simulador
           done
 
@@ -98,14 +100,13 @@ jobs:
           cp assinador/target/assinador-*.jar dist/assinador.jar
           cp simuladorjar/target/simulador.jar dist/simulador.jar
 
-      - name: Atualizar release.json com a tag publicada
-        env:
-          TAG: ${{ steps.versao.outputs.TAG }}
+      - name: Publicar manifesto release.json
         run: |
-          TAG_SEM_V="${TAG#v}"
-          # Substitui as versoes do manifesto pela tag publicada.
-          sed -E "s/\"version\": \"[^\"]+\"/\"version\": \"${TAG_SEM_V}\"/g" \
-            release.json > dist/release.json
+          # Estrategia hibrida: o manifesto referencia os artefatos REAIS do
+          # upstream (validador/simulador) por tag fixa + sha256. Nao reescrever
+          # as versoes com a tag desta release das CLIs. Ver
+          # docs/adr/0004-estrategia-hibrida-artefatos.md.
+          cp release.json dist/release.json
           cat dist/release.json
 
       - name: Gerar checksums SHA256

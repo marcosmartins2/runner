@@ -1,8 +1,11 @@
 // Package release lida com o manifesto release.json publicado pelo repositorio
-// da disciplina e com o download de artefatos (simulador.jar e JRE).
+// da disciplina e com o download de artefatos (assinador/validador, simulador.jar
+// e JRE), incluindo verificacao de integridade via SHA256.
 package release
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,34 +13,64 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 )
 
 // URLReleaseManifestoPadrao aponta para o manifesto estavel publicado na branch
-// main do repositorio da disciplina.
+// main do repositorio da disciplina (upstream). E a unica fonte da verdade dos
+// artefatos reais consumidos em runtime (ver docs/adr/0004-estrategia-hibrida-artefatos.md).
 const URLReleaseManifestoPadrao = "https://raw.githubusercontent.com/kyriosdata/runner/main/release.json"
 
 // Manifesto representa a estrutura do release.json.
+//
+// O campo "validador" corresponde ao assinador.jar real publicado pelo upstream
+// (hubsaude-validador-api). "jar" e mantido apenas por compatibilidade com
+// manifestos antigos. "simulador" descreve o simulador.jar (hubsaude-simulador).
 type Manifesto struct {
-	Jar Artefato            `json:"jar"`
-	Jre map[string]string   `json:"jre"`
-	Sim *Artefato           `json:"simulador,omitempty"`
+	Validador *Artefato         `json:"validador,omitempty"`
+	Jar       Artefato          `json:"jar,omitempty"`
+	Sim       *Artefato         `json:"simulador,omitempty"`
+	Jre       map[string]string `json:"jre"`
 }
 
-// Artefato descreve uma entrada (jar ou jre).
+// Artefato descreve uma entrada do manifesto (validador, simulador ou jar).
 type Artefato struct {
 	URL     string `json:"url"`
 	Version string `json:"version"`
+	Tag     string `json:"tag,omitempty"`
+	SHA256  string `json:"sha256,omitempty"`
+}
+
+// ArtefatoAssinador devolve o artefato do assinador a ser consumido, preferindo
+// "validador" (artefato real do upstream) e caindo para "jar" (compatibilidade).
+// O segundo retorno e false quando nenhum esta disponivel.
+func (m Manifesto) ArtefatoAssinador() (Artefato, bool) {
+	if m.Validador != nil && m.Validador.URL != "" {
+		return *m.Validador, true
+	}
+	if m.Jar.URL != "" {
+		return m.Jar, true
+	}
+	return Artefato{}, false
+}
+
+// ArtefatoSimulador devolve o artefato do simulador, quando presente.
+func (m Manifesto) ArtefatoSimulador() (Artefato, bool) {
+	if m.Sim != nil && m.Sim.URL != "" {
+		return *m.Sim, true
+	}
+	return Artefato{}, false
 }
 
 // CarregarLocal le um release.json a partir do caminho informado.
 func CarregarLocal(caminho string) (Manifesto, error) {
 	var m Manifesto
-	bytes, err := os.ReadFile(caminho)
+	conteudo, err := os.ReadFile(caminho)
 	if err != nil {
 		return m, fmt.Errorf("falha ao ler release local: %w", err)
 	}
-	if err := json.Unmarshal(bytes, &m); err != nil {
+	if err := json.Unmarshal(conteudo, &m); err != nil {
 		return m, fmt.Errorf("release.json invalido: %w", err)
 	}
 	return m, nil
@@ -70,17 +103,20 @@ func BaixarManifesto(url string) (Manifesto, error) {
 }
 
 // ChaveJREDaPlataforma retorna a chave do mapa "jre" para o GOOS/GOARCH atual.
+// As chaves seguem a convencao do manifesto upstream (ex.: windows_x64,
+// linux_arm64, mac_arm64).
 func ChaveJREDaPlataforma() string {
+	arch := "x64"
+	if runtime.GOARCH == "arm64" {
+		arch = "arm64"
+	}
 	switch runtime.GOOS {
 	case "windows":
-		return "windows_x64"
+		return "windows_" + arch
 	case "linux":
-		return "linux_x64"
+		return "linux_" + arch
 	case "darwin":
-		if runtime.GOARCH == "arm64" {
-			return "mac_aarch64"
-		}
-		return "mac_x64"
+		return "mac_" + arch
 	}
 	return runtime.GOOS + "_" + runtime.GOARCH
 }
@@ -88,6 +124,13 @@ func ChaveJREDaPlataforma() string {
 // BaixarArquivo grava o conteudo de url em destino, criando os diretorios
 // intermediarios. Retorna erro se o status HTTP nao for 2xx.
 func BaixarArquivo(url, destino string) error {
+	return BaixarArquivoVerificado(url, destino, "")
+}
+
+// BaixarArquivoVerificado baixa url para destino e, quando sha256Esperado nao
+// for vazio, confere o digest do arquivo baixado. Em caso de divergencia o
+// arquivo e removido e um erro explicito e retornado (protecao de supply chain).
+func BaixarArquivoVerificado(url, destino, sha256Esperado string) error {
 	if err := os.MkdirAll(filepath.Dir(destino), 0o755); err != nil {
 		return fmt.Errorf("falha ao criar diretorio: %w", err)
 	}
@@ -116,6 +159,14 @@ func BaixarArquivo(url, destino string) error {
 		os.Remove(temp)
 		return fmt.Errorf("falha ao fechar arquivo: %w", err)
 	}
+
+	if sha256Esperado != "" {
+		if err := VerificarSHA256(temp, sha256Esperado); err != nil {
+			os.Remove(temp)
+			return err
+		}
+	}
+
 	if err := os.Rename(temp, destino); err != nil {
 		os.Remove(temp)
 		return fmt.Errorf("falha ao mover arquivo: %w", err)
@@ -123,14 +174,34 @@ func BaixarArquivo(url, destino string) error {
 	return nil
 }
 
-// VersaoInstalada le um arquivo "VERSION" lado-a-lado com o artefato.
+// VerificarSHA256 calcula o digest SHA256 do arquivo em caminho e o compara,
+// sem diferenciar maiusculas/minusculas, com o valor esperado.
+func VerificarSHA256(caminho, esperado string) error {
+	f, err := os.Open(caminho)
+	if err != nil {
+		return fmt.Errorf("falha ao abrir arquivo para verificacao: %w", err)
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return fmt.Errorf("falha ao calcular sha256: %w", err)
+	}
+	obtido := hex.EncodeToString(h.Sum(nil))
+	if !strings.EqualFold(obtido, esperado) {
+		return fmt.Errorf("integridade comprometida: sha256 esperado %s, obtido %s", esperado, obtido)
+	}
+	return nil
+}
+
+// VersaoInstalada le um arquivo "<artefato>.version" lado-a-lado com o artefato.
 // Retorna string vazia se o arquivo nao existir.
 func VersaoInstalada(caminhoArtefato string) string {
 	versao, err := os.ReadFile(caminhoArtefato + ".version")
 	if err != nil {
 		return ""
 	}
-	return string(versao)
+	return strings.TrimSpace(string(versao))
 }
 
 // GravarVersao registra a versao instalada do artefato.

@@ -7,6 +7,27 @@ on:
     branches: [main]
 
 jobs:
+  lint:
+    name: Lint - estilo Go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+      - name: go vet (bloqueante)
+        run: go vet ./...
+      - name: gofmt (informativo)
+        run: |
+          offenders=$(gofmt -l .)
+          if [ -n "$offenders" ]; then
+            echo "::warning::Arquivos fora do padrao gofmt (rode 'gofmt -w .'):"
+            echo "$offenders"
+          else
+            echo "Tudo conforme gofmt."
+          fi
+
   test-java-assinador:
     name: Tests - assinador.jar (Java)
     runs-on: ubuntu-latest
@@ -89,14 +110,16 @@ jobs:
       - name: Compilar todas as plataformas
         run: |
           mkdir -p dist
+          COMMIT="${GITHUB_SHA::7}"
+          LDFLAGS="-X main.version=dev -X main.commit=${COMMIT}"
           for target in linux/amd64 windows/amd64 darwin/amd64; do
             os="${target%/*}"
             arch="${target#*/}"
             ext=""
             if [ "$os" = "windows" ]; then ext=".exe"; fi
-            GOOS="$os" GOARCH="$arch" go build -ldflags "-X main.version=dev" \
+            GOOS="$os" GOARCH="$arch" go build -ldflags "${LDFLAGS}" \
               -o "dist/assinatura-${os}-${arch}${ext}" ./cmd/assinatura
-            GOOS="$os" GOARCH="$arch" go build -ldflags "-X main.version=dev" \
+            GOOS="$os" GOARCH="$arch" go build -ldflags "${LDFLAGS}" \
               -o "dist/simulador-${os}-${arch}${ext}" ./cmd/simulador
           done
       - uses: actions/upload-artifact@v4
